@@ -22,6 +22,8 @@ function tokenize(input) {
     var temp = rawCode.replace(/[\(\)\[\]]/g, function(a){return " "+a+" ";})
     //|(?=[\(\)\[\]])|(?<=[\(\)\[\]])
     // why does JS not support positive lookbehind? :(
+    
+    // semicolon to account for comments
     var temp2 = temp.split(/[\s\n]+|\;.*\n/g); 
     return temp2.filter( function(str){return str!="";} );
 };
@@ -55,11 +57,35 @@ function evaluate() {
     console.log(tokenizedInput);
 
     var parseResult = parseStr(tokenizedInput);
-    
+    if (!parseResult) {
+        //error occurred
+    }
 };
 
 function parseStr(strArr) {
-  
+    //check for correct bracket pair
+    var bracketStack = [];
+    for (var i=0; i< strArr.length; ++i) {
+        if (strArr[i]==="(" || strArr[i] === "[")
+            bracketStack.push(strArr[i]);
+        else if (strArr[i]===")" || strArr[i] === "]") {
+            var lastBracket = bracketStack.pop();
+            if (!((lastBracket === "[" && strArr[i] === "]") ||
+            (lastBracket === "(" && strArr[i] === ")"))) {
+                console.log("Bracket pairing mismatch!!!");
+                return null;
+            }
+        }
+            
+    }
+    //normalize brackets
+    for (var i=0; i< strArr.length; ++i) {
+        if (strArr[i] === "[")
+            strArr[i] = "(";
+        else if (strArr[i] === "]")
+            strArr[i] = ")";
+    }
+    
     var strCodeBlocks = recognizeBlock(strArr);
     
     console.log("Parsed String Code Blocks:" );
@@ -80,28 +106,21 @@ function recognizeBlock(unparsedBlocks) {
     if (unparsedBlocks.length ==1)
         return unparsedBlocks;
     block = [];
+    // unparsedBlocks gets shorter as it is consumed
+    // experimented with scheme-style recursion where recursing element is used up
     while (unparsedBlocks.length > 0){
-        if (unparsedBlocks[0]==="(" || unparsedBlocks[0] === "[") {
-            var blockStart = unparsedBlocks[0];
+        if (unparsedBlocks[0]==="(") {
             var bracketcount = 1;
             for (var i=1; i<unparsedBlocks.length; ++i) {
-                if (unparsedBlocks[i]==="(" || unparsedBlocks[i] === "[")
+                if (unparsedBlocks[i]==="(")
                     bracketcount++;
-                else if (unparsedBlocks[i]===")" || unparsedBlocks[i] === "]") {
+                else if (unparsedBlocks[i]===")") {
                     bracketcount--;
                     if (bracketcount ==0) {
-                        if ((blockStart === "[" && unparsedBlocks[i] === "]") ||
-                        (blockStart === "(" && unparsedBlocks[i] === ")")) {
-                            var splicedblock = unparsedBlocks.slice(0,i+1);
-                            block.push(splicedblock);
-                            unparsedBlocks = unparsedBlocks.slice(i+1,unparsedBlocks.length);
-                            i = unparsedBlocks.length;
-                        }
-                        else {
-                            i = unparsedBlocks.length;
-                            console.log("Error, mismatching block brackets");
-                            unparsedBlocks=[];
-                        }
+                        var splicedblock = unparsedBlocks.slice(0,i+1);
+                        block.push(splicedblock);
+                        unparsedBlocks = unparsedBlocks.slice(i+1,unparsedBlocks.length);
+                        i = unparsedBlocks.length;
                     }
                 }
             }
@@ -123,60 +142,54 @@ function recursivelyBuildCodeTree(strBlock) {
         var bracketCount = 0;
         
         //initial brackets
-        if (strBlock[0] =="(" || strBlock[0] =="[" ) {
+        if (strBlock[0] =="(") {
             startIndex = 1;
             bracketCount++;
             
             //tracking expressions
+            //this time tried traditional for-loop with indexes for applying recursion to strBlock 
             for (var i=1; i< strBlock.length-1; ++i) {
                 //subexpression
-                if (strBlock[i] ==="(" || strBlock[i] === "[") {
-                    var blockStart = strBlock[i];
+                if (strBlock[i] ==="(") {
                     
-                    console.log("Subexpression!");
+                    //console.log("Subexpression!");
                     bracketCount++;
                     
                     var closedBracketCount = bracketCount-1;
                     
                     //searches for closing bracket, then slices and recurses
                     for (var j=i+1; j< strBlock.length; ++j) {
-                        console.log("i:"+ i + ", j:" +j);
-                        if (strBlock[j] ==="(" || strBlock[j] === "[")
+                        //console.log("i:"+ i + ", j:" +j);
+                        if (strBlock[j] ==="(")
                             bracketCount++;
-                        else if (strBlock[j] ===")" || strBlock[j] === "]"){
+                        else if (strBlock[j] ===")"){
                             bracketCount--;
                             if (closedBracketCount == bracketCount) {
-                                if ((blockStart === "[" && strBlock[j] === "]") ||
-                                (blockStart === "(" && strBlock[j] === ")")) {
-                                    console.log("Found closing bracket!");
-                                    var subExpression = recursivelyBuildCodeTree(strBlock.slice(startIndex,j+1));
-                                    subBlocks.push(subExpression);
-                                    startIndex =j+1;
-                                    i=j; //i++ is done everytime
-                                    j = strBlock.length; //exit inner loop
-                                }
-                                else 
-                                    console.log("Mis-paired bracket!");
+                                //console.log("Found closing bracket!");
+                                var subExpression = recursivelyBuildCodeTree(strBlock.slice(startIndex,j+1));
+                                subBlocks.push(subExpression);
+                                startIndex =j+1;
+                                i=j; //i++ is done everytime
+                                j = strBlock.length; //exit inner loop
                             }
-       
                         }
                     }
                 }
-                else if (strBlock[j] ===")" || strBlock[j] === "]"){
+                else if (strBlock[j] ===")"){
                     bracketCount--;
                 }
                 //singleton, directly add to exp tree
                 else {
                     var singleton = strBlock.slice(startIndex,i+1)[0];
-                    console.log("Singleton: ");
-                    console.log(singleton);
+                    //console.log("Singleton: ");
+                    //console.log(singleton);
                     subBlocks.push(singleton);
                     startIndex=i+1;
                 }
             }
         }
         // decrement for closing brackets here        
-        else if (strBlock[j] ===")" || strBlock[j] === "]"){
+        else if (strBlock[j] ===")"){
             bracketCount--;
         }
         else {
