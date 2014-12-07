@@ -18,9 +18,12 @@ var globalNamespace = Namespace(null);
 
 var Exp = function () {
 };
+var SpecialForm = function () {
+    this.type = "SpecialForm";
+};
 var Type = function() {
-    this.eval = function() { return this;};
-}
+    this.eval = function() { return this; } ;
+};
 
 var Num = function (value) { 
     this.type="Num";
@@ -61,7 +64,7 @@ var Lambda = function (paramId, body) {
     // idList is an Array of Strings that is declared in the sub-namespace
     // body is the Exp that will involve members of idList
     
-    this.type="Function";
+    this.type="Lambda";
     
     this.name = "lambda";
     this.paramCount;
@@ -74,14 +77,12 @@ var Lambda = function (paramId, body) {
     this.paramId=paramId;
     this.body = body;
     
-    this.eval = function () {
-    // arguments[0] is a Namespace
-    // arguments.length = paramId.length + 1
-    // arguments[1] to arguments[arguments.length-1] are Exp
-    
+    this.eval = function (syntaxStrTreeArg, namespace) {
+        
     };
 }
 
+SpecialForm.prototype = new Exp();
 Type.prototype = new Exp();
 Num.prototype = new Type();
 Str.prototype = new Type();
@@ -90,22 +91,12 @@ Sym.prototype = new Type();
 Char.prototype = new Type();
 Lambda.prototype = new Type();
 
-function evalId(id, namespace) {
-    // id is a String
-    // namespace is a Namespace
-    
-    var evalResult = namespace[id];
-    if (evalResult)
-        return evalResult;
-    else {
-        console.log("No binding for Id: "+ this.id);
-        return null;
-    }
-}
+
 
 function populateSpecialForms() {
     var keywords = {};
-    keywords["define"] = function(syntaxStrTree, namespace) {
+    keywords["define"] = new SpecialForm();
+    keywords["define"].eval = function(syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "define"
         // in the form of :
         // (define id exp)
@@ -119,8 +110,8 @@ function populateSpecialForms() {
             console.log("define body evaluation failed.");
         }
     };
-    keywords["define"].prototype = Exp();
-    keywords["local"] = function (syntaxStrTree, namespace) {
+    keywords["local"] = new SpecialForm();
+    keywords["local"].eval = function (syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "local"
         // in the form of :
         // (local (exp exp ... exp) body)
@@ -144,7 +135,7 @@ function populateSpecialForms() {
             return null;
         }
     }
-    keywords["local"].prototype = Exp();
+    
     return keywords;
 };
 
@@ -154,14 +145,17 @@ function populateStandardFunctions(namespace) {
     namespace["+"] = new Lambda(["x","y"], new Exp());
     namespace["+"].eval = function(syntaxStrTreeArg, namespace) {
         //var lambdaNamespace = Namespace(namespace);
-
-        if (syntaxStrTreeArg.reduce( function(prev, cur, ind, arr) { return (cur.type === "Num") && prev; }, true)) {
-            return new Num(syntaxStrTreeArg.reduce(function (prev, cur, ind, arr) { return prev + cur.value; }, 0));
+        var count = 0;
+        for (var i=1; i< syntaxStrTreeArg.length; ++i) {
+            if (syntaxStrTreeArg[i].type === "Num")
+                count += syntaxStrTreeArg[i].value;
+            else {
+                //i = syntaxStrTreeArg.length;
+                console.log("Not all arguments were Num Type");
+                return null;
+            }
         }
-        else {
-            console.log("Not all arguments were Num Type");
-            return null;
-        }
+        return new Num(count);
     }
     namespace["-"] = function () {
         this.name = "-";
@@ -440,7 +434,7 @@ function parseStepExpBlocks (syntaxStrBlocks) {
     }
 }
 
-function parseType(expression,namespace) {
+function parseLookupType(expression,namespace) {
     //console.log("Tried parsing: "+ expression);
     if (expression[0]==="\"" && expression[expression.length-1]==="\"")
         return new Str(expression.substring(1,length-1));
@@ -452,10 +446,14 @@ function parseType(expression,namespace) {
         return new Bool(expression==="\#t");
     else if (!isNaN(Number(expression)))
         return new Num(Number(expression));
-    else if (namespace[expression])
+    else if (console.log("Looked up special form: "+  expression) || specialForms[expression]) {
+        return specialForms[expression];
+    }
+    else if (console.log("Looked up: "+ expression +" in namespace: " + namespace) || namespace[expression]) {
         return namespace[expression];
+    }
     else {
-        console.log("Unknown type");
+        console.log("Unknown type: "+expression);
         return null;
     }
 }
@@ -464,8 +462,9 @@ function parseExpTree (syntaxStrTree, namespace) {
     if (Array.isArray(syntaxStrTree)) { 
         
         var lookupExp; // Expression to call, whether it is special form or function
-        if (Array.isArray(syntaxStrTree[0])) {
-            //probably lambda fn
+        lookupExp = parseExpTree(syntaxStrTree[0],namespace); 
+        /*if (Array.isArray(syntaxStrTree[0])) {
+            // lambda function that is declared in-line
         }
         else { // should be string
             lookupExp = lookupSpecialForm(syntaxStrTree[0]); // lookup special form
@@ -476,16 +475,25 @@ function parseExpTree (syntaxStrTree, namespace) {
             else { // lookup function in namespace
                 lookupExp = lookupName(syntaxStrTree[0], namespace);
             }
-        }
+        }*/
         
         //evaluate function if lookup was successful
         if (lookupExp) { 
+            if (lookupExp.type === "SpecialForm") {//if special form, do not evaluate arguments, instead, branch off
+                return lookupExp.eval(syntaxStrTree, namespace);
+            }
+            
             // evaluate the function call arguments first
-            var functionCallArgs = syntaxStrTree.slice(1).map(function(cur,i,arr) { return parseExpTree(cur,namespace); });
-            var argEvalSuccess = functionCallArgs.reduce(function(prev,cur,i,arr) { return prev && (cur instanceof Type); }, true);
+            var evaluatedSyntaxStrTree = new Array(syntaxStrTree.length);
+            evaluatedSyntaxStrTree[0] = syntaxStrTree[0];
+            var argEvalSuccess = true;
+            for (var i = 1; i< syntaxStrTree.length; ++i) {
+                evaluatedSyntaxStrTree[i] = parseExpTree(syntaxStrTree[i],namespace);
+                argEvalSuccess = argEvalSuccess && (evaluatedSyntaxStrTree[i] instanceof Type);
+            }
             // check if it was successful in producing Types
             if (argEvalSuccess) {
-                var result = lookupExp.eval(functionCallArgs,namespace);
+                var result = lookupExp.eval(evaluatedSyntaxStrTree,namespace);
                 if (result) {
                     return result;
                 }
@@ -495,8 +503,8 @@ function parseExpTree (syntaxStrTree, namespace) {
                 }
             }
             else {
-                //return [syntaxStrTree[0]].concat(functionCallArgs.map(function(cur,i,arr){ return cur.toString(); })); 
-                console.log(""+ syntaxStrTree[0]+ "function call arguments were not all Typed");
+                //return [syntaxStrTree[0]].concat(evaluatedSyntaxStrTree.map(function(cur,i,arr){ return cur.toString(); })); 
+                console.log(""+ syntaxStrTree[0]+ " function call arguments were not all Typed");
                 return null;
             }
         }
@@ -506,24 +514,7 @@ function parseExpTree (syntaxStrTree, namespace) {
         }
     }   
     else {
-        return parseType(syntaxStrTree, namespace);
+        return parseLookupType(syntaxStrTree, namespace);
     }
 }
-function lookupSpecialForm(name) {
-    console.log("Looked up special form: "+  name);
-    if (specialForms[name])
-        return specialForms[name];
-    else 
-        return null;
-}
-
-function lookupName(name, namespace) {
-    console.log("Looked up: "+  name +" in namespace: " + namespace);
-    if (namespace[name])
-        return namespace[name];
-    else 
-        return null;
-}
-
-
 
