@@ -176,9 +176,30 @@ function populateSpecialForms() {
     }
     keywords["cond"] = new SpecialForm();
     keywords["cond"].eval = function (syntaxStrTree, namespace) {
-        //assert syntaxStrTree[0] === "lambda"
+        //assert syntaxStrTree[0] === "cond"
         // in the form of :
-        // (local (id id ... id) body)
+        // (cond (bool exp) (bool exp) ... (else exp))
+        
+        if (Array.isArray(syntaxStrTree)) {
+            for (var i=1; i< syntaxStrTree.length; ++i) {
+                if (syntaxStrTree[i][0] && syntaxStrTree[i][0] === "else") {
+                    return parseExpTree(syntaxStrTree[i][1], namespace);
+                }
+                else {
+                    var predicate = parseExpTree(syntaxStrTree[i][0], namespace);
+                    if (predicate && predicate instanceof Bool && predicate.value) {
+                        return parseExpTree(syntaxStrTree[i][1], namespace);
+                    } //else {} //do nothing, go to next predicate
+                } 
+            }
+            // Should have exited by now
+            console.log("No else condition was found.");
+            return null;
+        } else {
+            console.log("cond conditions are invalid.");
+            return null;
+        }
+        
     }
     return keywords;
 };
@@ -186,7 +207,7 @@ function populateSpecialForms() {
 var specialForms = populateSpecialForms();
 
 function populateStandardFunctions(namespace) {
-    namespace["+"] = new Lambda(["x","y"], new Exp());
+    namespace["+"] = new Lambda(["x","y"], new Exp(), namespace);
     namespace["+"].eval = function(syntaxStrTreeArg, namespace) {
         var count = 0;
         for (var i=1; i< syntaxStrTreeArg.length; ++i) {
@@ -211,6 +232,24 @@ function populateStandardFunctions(namespace) {
     namespace["/"] = function () {
         this.name = "\/";
         return arguments.reduce(function(x,y){ return x.value/y.value; });
+    }
+    namespace["="] = new Lambda(["x","y"], new Exp(), namespace);
+    namespace["="].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length <= 2) {
+            console.log("= requires at least 2 arguments.");
+            return null;
+        }
+        for (var i=1; equal && i< syntaxStrTreeArg.length; ++i) {
+            if (syntaxStrTreeArg[i].type === "Num")
+                equal = equal && (syntaxStrTreeArg[1].value === syntaxStrTreeArg[i].value);
+            else {
+                //i = syntaxStrTreeArg.length;
+                console.log("Not all arguments were Num Type");
+                return null;
+            }
+        }
+        return new Bool(equal);
     }
 }
 populateStandardFunctions(globalNamespace);
@@ -249,8 +288,10 @@ function tokenize(input) {
         if (quoteEnabled) {
             var quoteEnd = i;
             for (var j=i+1; j< temp.length; ++j) {
-                if (temp.charAt(j) === "\"")
+                if (temp.charAt(j) === "\"") {
                     quoteEnd = j;
+                    j = temp.length;
+                }
             }
             if (quoteEnd === i) {
                 console.log("Mismatching quotes when tokenizing.");
