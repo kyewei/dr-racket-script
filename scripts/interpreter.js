@@ -81,17 +81,7 @@ var Lambda = function (paramId, body) {
     
     };
 }
-var FunctionEvaluation = function (lambda, args) {
-    // lambda is a Lambda
-    // args is a list of Exp
-    this.lambda = lambda;
-    this.args = args;
-    this.type="FunctionEvaluation";
-    this.eval = function(namespace) {
-        return lambda.eval.apply(lambda, [namespace].concat(args));
-    }
-    
-}
+
 Type.prototype = new Exp();
 Num.prototype = new Type();
 Str.prototype = new Type();
@@ -117,27 +107,44 @@ function populateSpecialForms() {
     var keywords = {};
     keywords["define"] = function(syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "define"
+        // in the form of :
+        // (define id exp)
         
-        if (Array.isArray(syntaxStrTree[2])) { // inside needs to be evaluated
-            var result = parseExpTree(syntaxStrTree[2],namespace);
-            if (result) {
-                if (result instanceof Type)
-                    syntaxStrTree[2] = result.toString;
-                else 
-                    syntaxStrTree[2] = result;
-                return syntaxStrTree;
-            }
+        var result = parseExpTree(syntaxStrTree[2],namespace);
+        if (result) {
+            namespace[syntaxStrTree[1]] = result;
+            return true; //for no errors
         }
         else {
-            var result = parseExpTree(syntaxStrTree[2],namespace);
-            if (result) {
-                namespace[syntaxStrTree[1]] = result;
-                return true;
-            }
+            console.log("define body evaluation failed.");
         }
-        
     };
     keywords["define"].prototype = Exp();
+    keywords["local"] = function (syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "local"
+        // in the form of :
+        // (local (exp exp ... exp) body)
+        
+        var localNamespace = Namespace(namespace);
+        var defEval = syntaxStrTree[1].map(function(cur,i,arr) { return parseExpTree(cur,localNamespace); });
+        var defSuccess = defEval.reduce(function(prev,cur,i,arr) { return prev && cur; }, true);
+        if (defSuccess) {
+            var result = parseExpTree(syntaxStrTree[2],localNamespace);
+            if (result) {
+                return result;
+            }
+            else {
+                console.log("local body evaluation failed.");
+                return null;
+            }
+            
+        }
+        else {
+            console.log("local definition body evaluation failed.");
+            return null;
+        }
+    }
+    keywords["local"].prototype = Exp();
     return keywords;
 };
 
@@ -156,7 +163,6 @@ function populateStandardFunctions(namespace) {
             return null;
         }
     }
-
     namespace["-"] = function () {
         this.name = "-";
         return arguments.reduce(function(x,y){ return x.value-y.value; });
@@ -214,13 +220,12 @@ function evaluate() {
     if (!syntaxStrTreeBlocks) {
         //error occurred
     }
-    var output = syntaxStrTreeBlocks.map(printCode).reduce(function(prev,cur,i,arr) { return prev+(i>0?"\n":"")+cur; },"");
-    console.log(output);
+    //var output = syntaxStrTreeBlocks.map(printCode).reduce(function(prev,cur,i,arr) { return prev+(i>0?"\n":"")+cur; },"");
+    //console.log("\n"+output);
     
-    var stepExp = syntaxStrTreeBlocks; 
+    stepExp = syntaxStrTreeBlocks; 
     stepExp = parseStepExpBlocks(stepExp);
     while (stepExp.length > 0) {
-        printCode(stepExp);
         stepExp = parseStepExpBlocks(stepExp);
     }
     
@@ -240,7 +245,7 @@ function printCode(syntaxStrTreeBlocks) {
         return code;
     }
     else 
-        return syntaxStrTreeBlocks;
+        return ""+ syntaxStrTreeBlocks;
 };
 
 
@@ -282,8 +287,8 @@ function parseStr(strArr) {
     //Recognize first level code blocks;
     var strCodeBlocks = recognizeBlock(strArr);
     
-    console.log("Parsed String Code Blocks:" );
-    console.log(strCodeBlocks);
+    //console.log("Parsed String Code Blocks:" );
+    //console.log(strCodeBlocks);
     
     //Recursively generate tree of code syntax
     var parsedStrCodeTree = new Array (strCodeBlocks.length);
@@ -339,8 +344,8 @@ function recognizeBlock(unparsedBlocks) {
 // strBlock is Array of (String)
 // returns Array of (String or (Array of (String)))
 function recursivelyBuildCodeTree(strBlock) {
-    console.log("recursivelyBuildCodeTree called with: ");
-    console.log(strBlock);
+    //console.log("recursivelyBuildCodeTree called with: ");
+    //console.log(strBlock);
     if (strBlock.length>0) {
         var subBlocks = [];
         var startIndex = 0;
@@ -420,35 +425,23 @@ function recursivelyBuildCodeTree(strBlock) {
 
 
 function parseStepExpBlocks (syntaxStrBlocks) {
-    /*var expResultTree = new Array(syntaxStrBlocks.length);
-    for (var i=0; i< syntaxStrBlocks.length; ++i) {
-        var result = parseExpTree(syntaxStrBlocks[i], globalNamespace);
-        if (result){ //Not null
-            expResultTree[i] = result;
-            
-        }
-        else {
-            console.log("Unknown identifier.");
-            return null;
-        }
-    }
-    return expResultTree;*/
-    
     if (syntaxStrBlocks.length > 0) {
         var exp = parseExpTree(syntaxStrBlocks[0], globalNamespace);
         
-        if (Array.isArray(exp)) {
+        /*if (Array.isArray(exp)) {
             syntaxStrBlocks[0] = exp;
             return syntaxStrBlocks; //don't need since original object is modified
-        }
-        else { // Expression is simplest form 
-            console.log(exp); //Print output to console
+        }*/
+        if (exp) { // Expression is simplest form 
+            if (exp !== true)
+                console.log(""+exp); //Print output to console
             return syntaxStrBlocks.slice(1); //return rest of blocks to parse
         }
     }
 }
 
 function parseType(expression,namespace) {
+    //console.log("Tried parsing: "+ expression);
     if (expression[0]==="\"" && expression[expression.length-1]==="\"")
         return new Str(expression.substring(1,length-1));
     else if (expression[0]==="\'" && expression.length>1)
@@ -470,60 +463,48 @@ function parseType(expression,namespace) {
 function parseExpTree (syntaxStrTree, namespace) {
     if (Array.isArray(syntaxStrTree)) { 
         
+        var lookupExp; // Expression to call, whether it is special form or function
         if (Array.isArray(syntaxStrTree[0])) {
             //probably lambda fn
         }
         else { // should be string
-            var lookupExp = lookupSpecialForm(syntaxStrTree[0]); // lookup special form
-            if (lookupExp) {
+            lookupExp = lookupSpecialForm(syntaxStrTree[0]); // lookup special form
+            if (lookupExp) { // if the special form is found, then this branch exits
                 var result = lookupExp(syntaxStrTree, namespace);
                 return result;
             }
-            else { // lookup function
+            else { // lookup function in namespace
                 lookupExp = lookupName(syntaxStrTree[0], namespace);
-                if (lookupExp) { //evaluate function
-                    var functionCallArgs = syntaxStrTree.slice(1).map(function(cur,i,arr) { return parseExpTree(cur,namespace); });
-                    if (functionCallArgs.reduce(function(prev,cur,i,arr) { return prev && (cur instanceof Type); }, true)) {
-                        var result = lookupExp.eval(functionCallArgs,namespace);
-                        if (result) {
-                            return result;
-                        }
-                        else {
-                            console.log("Function "+syntaxStrTree[0]+" evaluation returned error");
-                            return null;
-                        }
-
-                    }
-                    else {
-                        return [syntaxStrTree[0]].concat(functionCallArgs.map(function(cur,i,arr){ return cur.toString(); })); 
-                    }
-                }
-                else {
-                    console.log("Descriptor not found: "+syntaxStrTree[0]);
-                    return null;
-                }
             }
         }
         
-        /*var expResultTree = new Array(syntaxStrTree.length);
-        
-        if (syntaxStrTree.length>1) {
-            if (Array.isArray(syntaxStrTree[0])) {
-                //probably lambda fn
-            }
-            else { // Is keyword for function or special form.
-                var lookupExp = lookupName(syntaxStrTree[0], namespace);
-                if (lookupExp) {
-                    var result = new lookupExp(syntaxStrTree[1], parseExpTree(syntaxStrTree[2], namespace));
-                    //return result;
+        //evaluate function if lookup was successful
+        if (lookupExp) { 
+            // evaluate the function call arguments first
+            var functionCallArgs = syntaxStrTree.slice(1).map(function(cur,i,arr) { return parseExpTree(cur,namespace); });
+            var argEvalSuccess = functionCallArgs.reduce(function(prev,cur,i,arr) { return prev && (cur instanceof Type); }, true);
+            // check if it was successful in producing Types
+            if (argEvalSuccess) {
+                var result = lookupExp.eval(functionCallArgs,namespace);
+                if (result) {
+                    return result;
                 }
                 else {
-                    console.log("Descriptor not found: "+syntaxStrTree[0]);
+                    console.log("Function "+syntaxStrTree[0]+" evaluation returned error");
                     return null;
                 }
             }
-        }*/
-    }
+            else {
+                //return [syntaxStrTree[0]].concat(functionCallArgs.map(function(cur,i,arr){ return cur.toString(); })); 
+                console.log(""+ syntaxStrTree[0]+ "function call arguments were not all Typed");
+                return null;
+            }
+        }
+        else {
+            console.log("Descriptor not found: "+syntaxStrTree[0]);
+            return null;
+        }
+    }   
     else {
         return parseType(syntaxStrTree, namespace);
     }
