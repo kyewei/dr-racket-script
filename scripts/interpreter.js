@@ -91,8 +91,7 @@ var Lambda = function (ids, body, namespace) {
                 console.log("Lambda evaluation error.");
                 return null;
             }
-        }
-        else {
+        } else {
             console.log("Function parameter count mismatch.");
             return null;
         }
@@ -113,6 +112,8 @@ Lambda.prototype = new Type();
 
 function populateSpecialForms() {
     var keywords = {};
+    keywords["true"] = new Bool(true);
+    keywords["false"] = new Bool(false);
     keywords["define"] = new SpecialForm();
     keywords["define"].eval = function(syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "define"
@@ -128,8 +129,7 @@ function populateSpecialForms() {
             id = syntaxStrTree[1][0];
             var lambdaIds = syntaxStrTree[1].slice(1);
             result = new Lambda(lambdaIds, body, namespace);
-        }
-        else { // object define
+        } else { // object define
             id = syntaxStrTree[1];
             result = parseExpTree(body,namespace);
         }
@@ -137,8 +137,7 @@ function populateSpecialForms() {
         if (result) {
             namespace[id] = result;
             return true; //for no errors
-        }
-        else {
+        } else {
             console.log("define body evaluation failed.");
         }
     };
@@ -155,14 +154,11 @@ function populateSpecialForms() {
             var result = parseExpTree(syntaxStrTree[2],localNamespace);
             if (result) {
                 return result;
-            }
-            else {
+            } else {
                 console.log("local body evaluation failed.");
                 return null;
-            }
-            
-        }
-        else {
+            } 
+        } else {
             console.log("local definition body evaluation failed.");
             return null;
         }
@@ -178,6 +174,12 @@ function populateSpecialForms() {
         
         return new Lambda(ids, body, namespace);
     }
+    keywords["cond"] = new SpecialForm();
+    keywords["cond"].eval = function (syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "lambda"
+        // in the form of :
+        // (local (id id ... id) body)
+    }
     return keywords;
 };
 
@@ -186,7 +188,6 @@ var specialForms = populateSpecialForms();
 function populateStandardFunctions(namespace) {
     namespace["+"] = new Lambda(["x","y"], new Exp());
     namespace["+"].eval = function(syntaxStrTreeArg, namespace) {
-        //var lambdaNamespace = Namespace(namespace);
         var count = 0;
         for (var i=1; i< syntaxStrTreeArg.length; ++i) {
             if (syntaxStrTreeArg[i].type === "Num")
@@ -238,10 +239,36 @@ function tokenize(input) {
     var temp = rawCode.replace(/[\(\)\[\]]/g, function(a){return " "+a+" ";})
     //|(?=[\(\)\[\]])|(?<=[\(\)\[\]])
     // Why does JS not support positive look-behind? :(
-    
+    //console.log(temp);
+    var temp2 = "";
+    var quoteEnabled = false;
+    for (var i=0; i< temp.length; ++i) {
+        if (temp.charAt(i) === "\"")
+            quoteEnabled = true;
+        
+        if (quoteEnabled) {
+            var quoteEnd = i;
+            for (var j=i+1; j< temp.length; ++j) {
+                if (temp.charAt(j) === "\"")
+                    quoteEnd = j;
+            }
+            if (quoteEnd === i) {
+                console.log("Mismatching quotes when tokenizing.");
+                return null;
+            }
+            var quoted = temp.substring(i, quoteEnd+1);
+            var unquoted = quoted.replace(/ [\(\)\[\]] /g, function(a){return a.charAt(1);});
+            
+            temp2 += unquoted;
+            i = quoteEnd;
+            quoteEnabled = false;
+        }
+        else 
+            temp2 +=temp.charAt(i);
+    }
     // Semicolon to account for comments
-    var temp2 = temp.split(/[\s\n]+|\;.*\n/g); 
-    return temp2.filter( function(str){return str!="";} );
+    var temp3 = temp2.split(/[\s\n]+|\;.*\n/g); 
+    return temp3.filter( function(str){return str!="";} );
 };
 
 
@@ -279,8 +306,7 @@ function printCode(syntaxStrTreeBlocks) {
         
         code +=")"
         return code;
-    }
-    else 
+    } else 
         return ""+ syntaxStrTreeBlocks;
 };
 
@@ -289,16 +315,20 @@ function parseStr(strArr) {
     
     //This is a preliminary check for correct bracket pairing and count
     var bracketStack = [];
+    var quoteEnabled = false;
     for (var i=0; i< strArr.length; ++i) {
-        if (strArr[i]==="(" || strArr[i] === "[")
+        if (strArr[i]==="\"") 
+            quoteEnabled = !quoteEnabled;
+        
+        if (quoteEnabled) {} 
+        else if (strArr[i]==="(" || strArr[i] === "[")
             bracketStack.push(strArr[i]);
         else if (strArr[i]===")" || strArr[i] === "]") {
             var lastBracket = bracketStack.pop();
             if (!lastBracket) {
                 console.log("Extra brackets!");
                 return null;
-            }
-            else if (!((lastBracket === "[" && strArr[i] === "]") ||
+            } else if (!((lastBracket === "[" && strArr[i] === "]") ||
             (lastBracket === "(" && strArr[i] === ")"))) {
                 console.log("Brackets paired incorrectly!");
                 return null;
@@ -306,15 +336,23 @@ function parseStr(strArr) {
             //Otherwise, brackets fine
         }   
     }
+    if (quoteEnabled) {
+        console.log("Missing quotation marks");
+        return null;
+    }
     if (bracketStack.length>0) {
         console.log("Missing brackets!");
         return null;
     }
     
-    
+    quoteEnabled = false;
     //Check passed: now normalize brackets
     for (var i=0; i< strArr.length; ++i) {
-        if (strArr[i] === "[")
+        if (strArr[i]==="\"") 
+            quoteEnabled = !quoteEnabled;
+            
+        if (quoteEnabled) {} 
+        else if (strArr[i] === "[")
             strArr[i] = "(";
         else if (strArr[i] === "]")
             strArr[i] = ")";
@@ -343,7 +381,7 @@ function parseStr(strArr) {
 
 
 function recognizeBlock(unparsedBlocks) {
-    if (unparsedBlocks.length ==1)
+    if (unparsedBlocks.length ===1)
         return unparsedBlocks;
     block = [];
     // unparsedBlocks gets shorter as it is consumed
@@ -356,7 +394,7 @@ function recognizeBlock(unparsedBlocks) {
                     bracketcount++;
                 else if (unparsedBlocks[i]===")") {
                     bracketcount--;
-                    if (bracketcount ==0) {
+                    if (bracketcount === 0) {
                         var splicedblock = unparsedBlocks.slice(0,i+1);
                         block.push(splicedblock);
                         unparsedBlocks = unparsedBlocks.slice(i+1,unparsedBlocks.length);
@@ -364,12 +402,10 @@ function recognizeBlock(unparsedBlocks) {
                     }
                 }
             }
-        }
-        else if (unparsedBlocks[0]===")"){
+        } else if (unparsedBlocks[0]===")"){
             console.log("Extra brackets");
             return null;
-        }
-        else {
+        } else {
             block.push (unparsedBlocks[0])
             unparsedBlocks = unparsedBlocks.slice(1);
         }
@@ -479,7 +515,7 @@ function parseStepExpBlocks (syntaxStrBlocks) {
 function parseLookupType(expression,namespace) {
     //console.log("Tried parsing: "+ expression);
     if (expression[0]==="\"" && expression[expression.length-1]==="\"")
-        return new Str(expression.substring(1,length-1));
+        return new Str(expression.substring(1,expression.length-1));
     else if (expression[0]==="\'" && expression.length>1)
         return new Sym(expression.substring(1));
     else if (expression.substring(0,2)==="\#\\" && expression.length>2)
@@ -490,11 +526,9 @@ function parseLookupType(expression,namespace) {
         return new Num(Number(expression));
     else if (console.log("Looked up special form: "+  expression) || specialForms[expression]) {
         return specialForms[expression];
-    }
-    else if (console.log("Looked up: "+ expression +" in namespace: " + namespace) || namespace[expression]) {
+    } else if (console.log("Looked up: "+ expression +" in namespace: " + namespace) || namespace[expression]) {
         return namespace[expression];
-    }
-    else {
+    } else {
         console.log("Unknown type: "+expression);
         return null;
     }
@@ -538,24 +572,20 @@ function parseExpTree (syntaxStrTree, namespace) {
                 var result = lookupExp.eval(evaluatedSyntaxStrTree,namespace);
                 if (result) {
                     return result;
-                }
-                else {
+                } else {
                     console.log("Function "+syntaxStrTree[0]+" evaluation returned error");
                     return null;
                 }
-            }
-            else {
+            } else {
                 //return [syntaxStrTree[0]].concat(evaluatedSyntaxStrTree.map(function(cur,i,arr){ return cur.toString(); })); 
                 console.log(""+ syntaxStrTree[0]+ " function call arguments were not all Typed");
                 return null;
             }
-        }
-        else {
+        } else {
             console.log("Descriptor not found: "+syntaxStrTree[0]);
             return null;
         }
-    }   
-    else {
+    } else {
         return parseLookupType(syntaxStrTree, namespace);
     }
 }
