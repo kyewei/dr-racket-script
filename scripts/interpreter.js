@@ -60,24 +60,42 @@ var Char = function (value) {
         return "#\\"+this.value;
     }
 };
-var Lambda = function (paramId, body) {
-    // idList is an Array of Strings that is declared in the sub-namespace
-    // body is the Exp that will involve members of idList
+var Lambda = function (ids, body, namespace) {
+    // ids is an Array of Strings that is declared in the sub-namespace
+    // body is the Exp that will involve members of ids
     
     this.type="Lambda";
     
     this.name = "lambda";
-    this.paramCount;
+    this.paramCount = ids.length;
     /* if (paramId.length >=3 && paramId[length-2] ==".") {
         this.paramCount = paramIdlength-1;
     }
     else {
         this.paramId = paramId;
     } */
-    this.paramId=paramId;
+    this.ids=ids;
     this.body = body;
+    this.inheritedNamespace = namespace;
     
     this.eval = function (syntaxStrTreeArg, namespace) {
+        var lambdaNamespace = Namespace(this.inheritedNamespace);
+        if (syntaxStrTreeArg.length - 1 === ids.length) {
+            for (var i=0; i< ids.length; ++i) {
+                lambdaNamespace[ids[i]]=syntaxStrTreeArg[i+1];
+            }
+            var result = parseExpTree(body, lambdaNamespace);
+            if (result)
+                return result;
+            else {
+                console.log("Lambda evaluation error.");
+                return null;
+            }
+        }
+        else {
+            console.log("Function parameter count mismatch.");
+            return null;
+        }
         
     };
 }
@@ -99,11 +117,25 @@ function populateSpecialForms() {
     keywords["define"].eval = function(syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "define"
         // in the form of :
-        // (define id exp)
+        // (define id exp) for objects
+        // (define (function-name id id ... id) exp) for functions
         
-        var result = parseExpTree(syntaxStrTree[2],namespace);
+        var result;
+        var id;
+        var body = syntaxStrTree[2];
+        
+        if (Array.isArray(syntaxStrTree[1])) { //function define 
+            id = syntaxStrTree[1][0];
+            var lambdaIds = syntaxStrTree[1].slice(1);
+            result = new Lambda(lambdaIds, body, namespace);
+        }
+        else { // object define
+            id = syntaxStrTree[1];
+            result = parseExpTree(body,namespace);
+        }
+        
         if (result) {
-            namespace[syntaxStrTree[1]] = result;
+            namespace[id] = result;
             return true; //for no errors
         }
         else {
@@ -135,7 +167,17 @@ function populateSpecialForms() {
             return null;
         }
     }
-    
+    keywords["lambda"] = new SpecialForm();
+    keywords["lambda"].eval = function (syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "lambda"
+        // in the form of :
+        // (local (id id ... id) body)
+        
+        var ids = syntaxStrTree[1];
+        var body = syntaxStrTree[2];
+        
+        return new Lambda(ids, body, namespace);
+    }
     return keywords;
 };
 
