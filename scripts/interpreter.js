@@ -114,6 +114,42 @@ function populateSpecialForms() {
     var keywords = {};
     keywords["true"] = new Bool(true);
     keywords["false"] = new Bool(false);
+    keywords["and"] = new SpecialForm();
+    keywords["and"].eval = function(syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "and"
+        // in the form of :
+        // (and exp exp ... exp) 
+        var predicate = true;
+        
+        for (var i=1; i< syntaxStrTree.length && predicate; ++i) {
+            var exp = parseExpTree(syntaxStrTree[i], namespace);
+            if (exp.type === "Bool")
+                predicate = predicate && exp.value;
+            else {
+                console.log("and evaluation result not Bool.");
+                return null;
+            }
+        }
+        return new Bool(predicate);     
+    };
+    keywords["or"] = new SpecialForm();
+    keywords["or"].eval = function(syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "or"
+        // in the form of :
+        // (or exp exp ... exp) 
+        var predicate = false;
+        
+        for (var i=1; i< syntaxStrTree.length && !predicate; ++i) {
+            var exp = parseExpTree(syntaxStrTree[i], namespace);
+            if (exp.type === "Bool")
+                predicate = predicate || exp.value;
+            else {
+                console.log("or evaluation result not Bool.");
+                return null;
+            }
+        }
+        return new Bool(predicate);  
+    };
     keywords["define"] = new SpecialForm();
     keywords["define"].eval = function(syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "define"
@@ -207,6 +243,26 @@ function populateSpecialForms() {
 var specialForms = populateSpecialForms();
 
 function populateStandardFunctions(namespace) {
+    namespace["number?"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["number?"].eval = function(syntaxStrTreeArg, namespace) {
+        return new Bool(syntaxStrTreeArg[1].type === "Num");
+    }
+    namespace["boolean?"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["boolean?"].eval = function(syntaxStrTreeArg, namespace) {
+        return new Bool(syntaxStrTreeArg[1].type === "Bool");
+    }
+    namespace["string?"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["string?"].eval = function(syntaxStrTreeArg, namespace) {
+        return new Bool(syntaxStrTreeArg[1].type === "Str");
+    }
+    namespace["expt"] = new Lambda(["x","y"], new Exp(), namespace);
+    namespace["expt"].eval = function(syntaxStrTreeArg, namespace) {
+        return new Num(Math.pow(syntaxStrTreeArg[1], syntaxStrTreeArg[2]));
+    }
+    namespace["sqr"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["sqr"].eval = function(syntaxStrTreeArg, namespace) {
+        return parseExpTree(["expt", syntaxStrTreeArg[1], new Num(2)],namespace);
+    }
     namespace["+"] = new Lambda(["x","y"], new Exp(), namespace);
     namespace["+"].eval = function(syntaxStrTreeArg, namespace) {
         var count = 0;
@@ -214,37 +270,133 @@ function populateStandardFunctions(namespace) {
             if (syntaxStrTreeArg[i].type === "Num")
                 count += syntaxStrTreeArg[i].value;
             else {
-                //i = syntaxStrTreeArg.length;
                 console.log("Not all arguments were Num Type");
                 return null;
             }
         }
         return new Num(count);
     }
-    namespace["-"] = function () {
-        this.name = "-";
-        return arguments.reduce(function(x,y){ return x.value-y.value; });
+    namespace["-"] = new Lambda(["x","y"], new Exp(), namespace);
+    namespace["-"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length>=2 && syntaxStrTreeArg[1].type === "Num"){
+            var count = syntaxStrTreeArg[1].value;
+            for (var i=2; i< syntaxStrTreeArg.length; ++i) {
+                if (syntaxStrTreeArg[i].type === "Num")
+                    count -= syntaxStrTreeArg[i].value;
+                else {
+                    console.log("Not all arguments were Num Type");
+                    return null;
+                }
+            }
+            if (syntaxStrTreeArg.length === 2)
+                count *= -1;
+            
+            return new Num(count);
+        } else {
+            console.log("Not all arguments were Num Type");
+            return null;
+        }
     }
-    namespace["*"] = function () {
-        this.name = "*";
-        return arguments.reduce(function(x,y){ return x.value*y.value; });
+    namespace["*"] = new Lambda(["x","y"], new Exp(), namespace);
+    namespace["*"].eval = function(syntaxStrTreeArg, namespace) {
+        var count = 1;
+        for (var i=1; i< syntaxStrTreeArg.length; ++i) {
+            if (syntaxStrTreeArg[i].type === "Num")
+                count *= syntaxStrTreeArg[i].value;
+            else {
+                console.log("Not all arguments were Num Type");
+                return null;
+            }
+        }
+        return new Num(count);
     }
-    namespace["/"] = function () {
-        this.name = "\/";
-        return arguments.reduce(function(x,y){ return x.value/y.value; });
+    namespace["/"] = new Lambda(["x","y"], new Exp(), namespace);
+    namespace["/"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length>=2 && syntaxStrTreeArg[1].type === "Num"){
+            var count = syntaxStrTreeArg[1].value;
+            for (var i=2; i< syntaxStrTreeArg.length; ++i) {
+                if (syntaxStrTreeArg[i].type === "Num")
+                    count /= syntaxStrTreeArg[i].value;
+                else {
+                    console.log("Not all arguments were Num Type");
+                    return null;
+                }
+            }
+            if (syntaxStrTreeArg.length === 2)
+                count = 1/count;
+            //if (isFinite(count))
+                return new Num(count);
+            /*else {
+                console.log("Division error.");
+                return null;
+            }*/
+        } else {
+            console.log("Not all arguments were Num Type");
+            return null;
+        }
     }
-    namespace["="] = new Lambda(["x","y"], new Exp(), namespace);
-    namespace["="].eval = function(syntaxStrTreeArg, namespace) {
+    namespace["<"] = new Lambda(["x","y"], new Exp(), namespace);
+    namespace["<"].eval = function(syntaxStrTreeArg, namespace) {
         var equal = true;
         if (syntaxStrTreeArg.length <= 2) {
             console.log("= requires at least 2 arguments.");
             return null;
         }
-        for (var i=1; equal && i< syntaxStrTreeArg.length; ++i) {
+        for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
             if (syntaxStrTreeArg[i].type === "Num")
-                equal = equal && (syntaxStrTreeArg[1].value === syntaxStrTreeArg[i].value);
+                equal = equal && (syntaxStrTreeArg[i].value < syntaxStrTreeArg[i+1].value);
             else {
-                //i = syntaxStrTreeArg.length;
+                console.log("Not all arguments were Num Type");
+                return null;
+            }
+        }
+        return new Bool(equal);
+    }
+    namespace["<="] = new Lambda(["x","y"], new Exp(), namespace);
+    namespace["<="].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length <= 2) {
+            console.log("= requires at least 2 arguments.");
+            return null;
+        }
+        for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
+            if (syntaxStrTreeArg[i].type === "Num")
+                equal = equal && (syntaxStrTreeArg[i].value <= syntaxStrTreeArg[i+1].value);
+            else {
+                console.log("Not all arguments were Num Type");
+                return null;
+            }
+        }
+        return new Bool(equal);
+    }
+    namespace[">"] = new Lambda(["x","y"], new Exp(), namespace);
+    namespace[">"].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length <= 2) {
+            console.log("= requires at least 2 arguments.");
+            return null;
+        }
+        for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
+            if (syntaxStrTreeArg[i].type === "Num")
+                equal = equal && (syntaxStrTreeArg[i].value > syntaxStrTreeArg[i+1].value);
+            else {
+                console.log("Not all arguments were Num Type");
+                return null;
+            }
+        }
+        return new Bool(equal);
+    }
+    namespace[">="] = new Lambda(["x","y"], new Exp(), namespace);
+    namespace[">="].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length <= 2) {
+            console.log("= requires at least 2 arguments.");
+            return null;
+        }
+        for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
+            if (syntaxStrTreeArg[i].type === "Num")
+                equal = equal && (syntaxStrTreeArg[i].value >= syntaxStrTreeArg[i+1].value);
+            else {
                 console.log("Not all arguments were Num Type");
                 return null;
             }
@@ -555,7 +707,9 @@ function parseStepExpBlocks (syntaxStrBlocks) {
 
 function parseLookupType(expression,namespace) {
     //console.log("Tried parsing: "+ expression);
-    if (expression[0]==="\"" && expression[expression.length-1]==="\"")
+    if (expression instanceof Type)
+        return expression.eval();
+    else if (expression[0]==="\"" && expression[expression.length-1]==="\"")
         return new Str(expression.substring(1,expression.length-1));
     else if (expression[0]==="\'" && expression.length>1)
         return new Sym(expression.substring(1));
@@ -565,9 +719,11 @@ function parseLookupType(expression,namespace) {
         return new Bool(expression==="\#t");
     else if (!isNaN(Number(expression)))
         return new Num(Number(expression));
-    else if (console.log("Looked up special form: "+  expression) || specialForms[expression]) {
+    else if (specialForms[expression]) {
+        //console.log("Looked up special form: "+  expression);
         return specialForms[expression];
-    } else if (console.log("Looked up: "+ expression +" in namespace: " + namespace) || namespace[expression]) {
+    } else if (namespace[expression]) {
+        //console.log("Looked up: "+ expression +" in namespace: " + namespace);
         return namespace[expression];
     } else {
         console.log("Unknown type: "+expression);
@@ -580,19 +736,6 @@ function parseExpTree (syntaxStrTree, namespace) {
         
         var lookupExp; // Expression to call, whether it is special form or function
         lookupExp = parseExpTree(syntaxStrTree[0],namespace); 
-        /*if (Array.isArray(syntaxStrTree[0])) {
-            // lambda function that is declared in-line
-        }
-        else { // should be string
-            lookupExp = lookupSpecialForm(syntaxStrTree[0]); // lookup special form
-            if (lookupExp) { // if the special form is found, then this branch exits
-                var result = lookupExp(syntaxStrTree, namespace);
-                return result;
-            }
-            else { // lookup function in namespace
-                lookupExp = lookupName(syntaxStrTree[0], namespace);
-            }
-        }*/
         
         //evaluate function if lookup was successful
         if (lookupExp) { 
@@ -618,7 +761,6 @@ function parseExpTree (syntaxStrTree, namespace) {
                     return null;
                 }
             } else {
-                //return [syntaxStrTree[0]].concat(evaluatedSyntaxStrTree.map(function(cur,i,arr){ return cur.toString(); })); 
                 console.log(""+ syntaxStrTree[0]+ " function call arguments were not all Typed");
                 return null;
             }
