@@ -60,6 +60,22 @@ var Char = function (value) {
         return "#\\"+this.value;
     }
 };
+var List = function () {
+};
+var Empty = function () {
+    this.type="Empty";
+    this.toString = function () { 
+        return "empty"; 
+    };
+};
+var Cell = function (left, right) {
+    this.type="Cell";
+    this.left = left;
+    this.right = right;
+    this.toString = function () {
+        return "\(cons "+this.left.toString()+ " " + this.right.toString()+"\)";
+    }
+}
 var Lambda = function (ids, body, namespace) {
     // ids is an Array of Strings that is declared in the sub-namespace
     // body is the Exp that will involve members of ids
@@ -107,6 +123,9 @@ Bool.prototype = new Type();
 Sym.prototype = new Type();
 Char.prototype = new Type();
 Lambda.prototype = new Type();
+List.prototype = new Type();
+Empty.prototype = new List();
+Cell.prototype = new List();
 
 
 
@@ -114,6 +133,7 @@ function populateSpecialForms() {
     var keywords = {};
     keywords["true"] = new Bool(true);
     keywords["false"] = new Bool(false);
+    keywords["empty"] = new Empty();
     keywords["and"] = new SpecialForm();
     keywords["and"].eval = function(syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "and"
@@ -402,6 +422,65 @@ function populateStandardFunctions(namespace) {
             }
         }
         return new Bool(equal);
+    }
+    namespace["cons"] = new Lambda(["x","y"], new Exp(), namespace);
+    namespace["cons"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length === 3) {
+            return new Cell(syntaxStrTreeArg[1], syntaxStrTreeArg[2]);  
+        } else {
+            console.log("cons was not called with 2 parameters.");
+            return null;
+        }         
+    }
+    namespace["first"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["first"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Cell) {
+            return syntaxStrTreeArg[1].left;
+        } else {
+            console.log("first was not called with 1 cons cell.");
+            return null;
+        }         
+    }
+    namespace["rest"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["rest"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Cell) {
+            return syntaxStrTreeArg[1].right;
+        } else {
+            console.log("rest was not called with 1 cons cell.");
+            return null;
+        }         
+    }
+    namespace["empty?"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["empty?"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof List) {
+            return new Bool(syntaxStrTreeArg[1].type === "Empty");
+        } else {
+            console.log("empty? was not called with 1 list.");
+            return null;
+        }         
+    }
+    namespace["cons?"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["cons?"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof List) {
+            return new Bool(syntaxStrTreeArg[1].type === "Cell");
+        } else {
+            console.log("cons? was not called with 1 list.");
+            return null;
+        }         
+    }
+    namespace["list?"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["list?"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Type) {
+            if (syntaxStrTreeArg[1].type === "Empty") 
+                return new Bool(true);
+            else if (!(syntaxStrTreeArg[1] instanceof Cell))
+                return new Bool(false);
+            else 
+                return this.eval(["list", syntaxStrTreeArg[1].right], namespace);
+        } else {
+            console.log("list? was not called with an expression.");
+            return null;
+        }         
     }
 }
 populateStandardFunctions(globalNamespace);
