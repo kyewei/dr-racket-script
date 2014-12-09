@@ -6,12 +6,25 @@
               rel="stylesheet"-->
     </head>
     <body>
+        <h2>Evaluator: </h2>
         <textarea rows="10" 
                   cols="100" 
-                  id="code-field">Fill me!</textarea>
+                  placeholder="Fill me with Scheme code!"
+                  id="code-field"></textarea>
         <br>
         <button type="button" 
                 id="submit-button">Submit</button>
+        <br>
+        <br>
+        <h4>Console Output:</h4>
+        <textarea rows="8" 
+                  cols="100" 
+                  placeholder="Output is empty!"
+                  id="code-output"></textarea>
+        <br>
+        <button type="button" 
+                id="clear-button">Clear</button>
+                
         <script src="scripts/interpreter.js">
         </script>
     </body>

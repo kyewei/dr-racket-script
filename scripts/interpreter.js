@@ -1,6 +1,7 @@
 var textfield;
-var button;
-
+var submitbutton;
+var outputfield;
+var clearbutton;
 
 
 // ---------- SCHEME TYPE DECLARATIONS AND SETUP ----------
@@ -108,7 +109,7 @@ var Lambda = function (ids, body, namespace) {
                 return null;
             }
         } else {
-            console.log("Function parameter count mismatch.");
+            outputlog("Function parameter count mismatch.");
             return null;
         }
         
@@ -146,7 +147,7 @@ function populateSpecialForms() {
             if (exp.type === "Bool")
                 predicate = predicate && exp.value;
             else {
-                console.log("and evaluation result not Bool.");
+                outputlog("and evaluation result not Bool.");
                 return null;
             }
         }
@@ -164,7 +165,7 @@ function populateSpecialForms() {
             if (exp.type === "Bool")
                 predicate = predicate || exp.value;
             else {
-                console.log("or evaluation result not Bool.");
+                outputlog("or evaluation result not Bool.");
                 return null;
             }
         }
@@ -194,7 +195,7 @@ function populateSpecialForms() {
             namespace[id] = result;
             return true; //for no errors
         } else {
-            console.log("define body evaluation failed.");
+            outputlog("define body evaluation failed.");
         }
     };
     keywords["local"] = new SpecialForm();
@@ -211,11 +212,11 @@ function populateSpecialForms() {
             if (result) {
                 return result;
             } else {
-                console.log("local body evaluation failed.");
+                outputlog("local body evaluation failed.");
                 return null;
             } 
         } else {
-            console.log("local definition body evaluation failed.");
+            outputlog("local definition body evaluation failed.");
             return null;
         }
     }
@@ -249,13 +250,35 @@ function populateSpecialForms() {
                 } 
             }
             // Should have exited by now
-            console.log("No else condition was found.");
+            outputlog("No else condition was found.");
             return null;
         } else {
-            console.log("cond conditions are invalid.");
+            outputlog("cond conditions are invalid.");
             return null;
-        }
+        } 
+    }
+    keywords["if"] = new SpecialForm();
+    keywords["if"].eval = function (syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "if"
+        // in the form of :
+        // (if predicate? true-exp false-exp))
         
+        if (Array.isArray(syntaxStrTree) && syntaxStrTree.length===4) {
+            var predicate = parseExpTree(syntaxStrTree[1], namespace);
+            if (predicate && predicate.type==="Bool") {
+                if (predicate.value) {
+                    return parseExpTree(syntaxStrTree[2], namespace);
+                } else {
+                    return parseExpTree(syntaxStrTree[3], namespace);
+                }
+            } else {
+                outputlog("if predicate gave error or was not type Bool.")
+                return null;
+            }
+        } else {
+            outputlog("if is invalid or does not have 3 arguments.");
+            return null;
+        } 
     }
     return keywords;
 };
@@ -290,7 +313,7 @@ function populateStandardFunctions(namespace) {
             if (syntaxStrTreeArg[i].type === "Num")
                 count += syntaxStrTreeArg[i].value;
             else {
-                console.log("Not all arguments were Num Type");
+                outputlog("Not all arguments were Num Type");
                 return null;
             }
         }
@@ -304,7 +327,7 @@ function populateStandardFunctions(namespace) {
                 if (syntaxStrTreeArg[i].type === "Num")
                     count -= syntaxStrTreeArg[i].value;
                 else {
-                    console.log("Not all arguments were Num Type");
+                    outputlog("Not all arguments were Num Type");
                     return null;
                 }
             }
@@ -313,7 +336,7 @@ function populateStandardFunctions(namespace) {
             
             return new Num(count);
         } else {
-            console.log("Not all arguments were Num Type");
+            outputlog("Not all arguments were Num Type");
             return null;
         }
     }
@@ -324,7 +347,7 @@ function populateStandardFunctions(namespace) {
             if (syntaxStrTreeArg[i].type === "Num")
                 count *= syntaxStrTreeArg[i].value;
             else {
-                console.log("Not all arguments were Num Type");
+                outputlog("Not all arguments were Num Type");
                 return null;
             }
         }
@@ -338,7 +361,7 @@ function populateStandardFunctions(namespace) {
                 if (syntaxStrTreeArg[i].type === "Num")
                     count /= syntaxStrTreeArg[i].value;
                 else {
-                    console.log("Not all arguments were Num Type");
+                    outputlog("Not all arguments were Num Type");
                     return null;
                 }
             }
@@ -351,7 +374,7 @@ function populateStandardFunctions(namespace) {
                 return null;
             }*/
         } else {
-            console.log("Not all arguments were Num Type");
+            outputlog("Not all arguments were Num Type");
             return null;
         }
     }
@@ -359,14 +382,14 @@ function populateStandardFunctions(namespace) {
     namespace["<"].eval = function(syntaxStrTreeArg, namespace) {
         var equal = true;
         if (syntaxStrTreeArg.length <= 2) {
-            console.log("= requires at least 2 arguments.");
+            outputlog("< requires at least 2 arguments.");
             return null;
         }
         for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
             if (syntaxStrTreeArg[i].type === "Num")
                 equal = equal && (syntaxStrTreeArg[i].value < syntaxStrTreeArg[i+1].value);
             else {
-                console.log("Not all arguments were Num Type");
+                outputlog("Not all arguments were Num Type");
                 return null;
             }
         }
@@ -376,14 +399,14 @@ function populateStandardFunctions(namespace) {
     namespace["<="].eval = function(syntaxStrTreeArg, namespace) {
         var equal = true;
         if (syntaxStrTreeArg.length <= 2) {
-            console.log("= requires at least 2 arguments.");
+            outputlog("<= requires at least 2 arguments.");
             return null;
         }
         for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
             if (syntaxStrTreeArg[i].type === "Num")
                 equal = equal && (syntaxStrTreeArg[i].value <= syntaxStrTreeArg[i+1].value);
             else {
-                console.log("Not all arguments were Num Type");
+                outputlog("Not all arguments were Num Type");
                 return null;
             }
         }
@@ -393,14 +416,14 @@ function populateStandardFunctions(namespace) {
     namespace[">"].eval = function(syntaxStrTreeArg, namespace) {
         var equal = true;
         if (syntaxStrTreeArg.length <= 2) {
-            console.log("= requires at least 2 arguments.");
+            outputlog("> requires at least 2 arguments.");
             return null;
         }
         for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
             if (syntaxStrTreeArg[i].type === "Num")
                 equal = equal && (syntaxStrTreeArg[i].value > syntaxStrTreeArg[i+1].value);
             else {
-                console.log("Not all arguments were Num Type");
+                outputlog("Not all arguments were Num Type");
                 return null;
             }
         }
@@ -410,14 +433,14 @@ function populateStandardFunctions(namespace) {
     namespace[">="].eval = function(syntaxStrTreeArg, namespace) {
         var equal = true;
         if (syntaxStrTreeArg.length <= 2) {
-            console.log("= requires at least 2 arguments.");
+            outputlog(">= requires at least 2 arguments.");
             return null;
         }
         for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
             if (syntaxStrTreeArg[i].type === "Num")
                 equal = equal && (syntaxStrTreeArg[i].value >= syntaxStrTreeArg[i+1].value);
             else {
-                console.log("Not all arguments were Num Type");
+                outputlog("Not all arguments were Num Type");
                 return null;
             }
         }
@@ -428,7 +451,7 @@ function populateStandardFunctions(namespace) {
         if (syntaxStrTreeArg.length === 3) {
             return new Cell(syntaxStrTreeArg[1], syntaxStrTreeArg[2]);  
         } else {
-            console.log("cons was not called with 2 parameters.");
+            outputlog("cons was not called with 2 parameters.");
             return null;
         }         
     }
@@ -437,7 +460,7 @@ function populateStandardFunctions(namespace) {
         if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Cell) {
             return syntaxStrTreeArg[1].left;
         } else {
-            console.log("first was not called with 1 cons cell.");
+            outputlog("first was not called with 1 cons cell.");
             return null;
         }         
     }
@@ -446,7 +469,7 @@ function populateStandardFunctions(namespace) {
         if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Cell) {
             return syntaxStrTreeArg[1].right;
         } else {
-            console.log("rest was not called with 1 cons cell.");
+            outputlog("rest was not called with 1 cons cell.");
             return null;
         }         
     }
@@ -455,7 +478,7 @@ function populateStandardFunctions(namespace) {
         if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof List) {
             return new Bool(syntaxStrTreeArg[1].type === "Empty");
         } else {
-            console.log("empty? was not called with 1 list.");
+            outputlog("empty? was not called with 1 list.");
             return null;
         }         
     }
@@ -464,7 +487,7 @@ function populateStandardFunctions(namespace) {
         if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof List) {
             return new Bool(syntaxStrTreeArg[1].type === "Cell");
         } else {
-            console.log("cons? was not called with 1 list.");
+            outputlog("cons? was not called with 1 list.");
             return null;
         }         
     }
@@ -476,9 +499,9 @@ function populateStandardFunctions(namespace) {
             else if (!(syntaxStrTreeArg[1] instanceof Cell))
                 return new Bool(false);
             else 
-                return this.eval(["list", syntaxStrTreeArg[1].right], namespace);
+                return this.eval(["list?", syntaxStrTreeArg[1].right], namespace);
         } else {
-            console.log("list? was not called with an expression.");
+            outputlog("list? was not called with an expression.");
             return null;
         }         
     }
@@ -499,8 +522,16 @@ prep();
 
 function prep() {
     textfield = document.getElementById("code-field");
-    button = document.getElementById("submit-button");
-    button.onclick=evaluate;
+    outputfield = document.getElementById("code-output");
+    submitbutton = document.getElementById("submit-button");
+    clearbutton = document.getElementById("clear-button");
+    submitbutton.onclick=evaluate;
+    clearbutton.onclick = function () { outputfield.value = ""; };
+    //loadCode();
+};
+
+function outputlog(str) {
+    outputfield.value += str+"\n";
 };
 
 
@@ -543,7 +574,12 @@ function tokenize(input) {
     return temp3.filter( function(str){return str!="";} );
 };
 
-
+function importCode(str){
+    var temp = textfield.value;
+    textfield.value = str;
+    evaluate();
+    textfield.value = temp;
+};
 
 function evaluate() {
     var rawCode = textfield.value;
@@ -554,6 +590,8 @@ function evaluate() {
     var syntaxStrTreeBlocks = parseStr(tokenizedInput);
     if (!syntaxStrTreeBlocks) {
         //error occurred
+        outputlog("Error occurred parsing or tokenizing code.");
+        return null;
     }
     //var output = syntaxStrTreeBlocks.map(printCode).reduce(function(prev,cur,i,arr) { return prev+(i>0?"\n":"")+cur; },"");
     //console.log("\n"+output);
@@ -778,7 +816,7 @@ function parseStepExpBlocks (syntaxStrBlocks) {
         }*/
         if (exp) { // Expression is simplest form 
             if (exp !== true)
-                console.log(""+exp); //Print output to console
+                outputlog(""+exp); //Print output to console
             return syntaxStrBlocks.slice(1); //return rest of blocks to parse
         }
     }
@@ -805,7 +843,7 @@ function parseLookupType(expression,namespace) {
         //console.log("Looked up: "+ expression +" in namespace: " + namespace);
         return namespace[expression];
     } else {
-        console.log("Unknown type: "+expression);
+        outputlog("Unknown type: "+expression);
         return null;
     }
 }
@@ -836,15 +874,15 @@ function parseExpTree (syntaxStrTree, namespace) {
                 if (result) {
                     return result;
                 } else {
-                    console.log("Function "+syntaxStrTree[0]+" evaluation returned error");
+                    outputlog("Function "+syntaxStrTree[0]+" evaluation returned error");
                     return null;
                 }
             } else {
-                console.log(""+ syntaxStrTree[0]+ " function call arguments were not all Typed");
+                outputlog(""+ syntaxStrTree[0]+ " function call arguments were not all Typed");
                 return null;
             }
         } else {
-            console.log("Descriptor not found: "+syntaxStrTree[0]);
+            outputlog("Descriptor not found: "+syntaxStrTree[0]);
             return null;
         }
     } else {
