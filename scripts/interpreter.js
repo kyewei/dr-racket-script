@@ -505,6 +505,10 @@ function populateStandardFunctions(namespace) {
             return null;
         }         
     }
+    namespace["identity"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["identity"].eval = function(syntaxStrTreeArg, namespace) {
+        return syntaxStrTreeArg[1];
+    }
 }
 populateStandardFunctions(globalNamespace);
     
@@ -517,7 +521,7 @@ populateStandardFunctions(globalNamespace);
 // ---------- INIT ----------
 
 
-
+var ready = false;
 prep();
 
 function prep() {
@@ -527,13 +531,43 @@ function prep() {
     clearbutton = document.getElementById("clear-button");
     submitbutton.onclick=evaluate;
     clearbutton.onclick = function () { outputfield.value = ""; };
-    //loadCode();
+    loadCode();
 };
 
 function outputlog(str) {
     outputfield.value += str+"\n";
 };
 
+function loadCode(){
+    // Apparently needed for compatibility with older browsers
+    if (typeof XMLHttpRequest === "undefined") {
+        XMLHttpRequest = function () {
+            try { return new ActiveXObject("Msxml2.XMLHTTP.6.0"); }
+            catch (e) {}
+            try { return new ActiveXObject("Msxml2.XMLHTTP.3.0"); }
+            catch (e) {}
+            try { return new ActiveXObject("Microsoft.XMLHTTP"); }
+            catch (e) {}
+            throw new Error("This browser does not support XMLHttpRequest.");
+        };
+    }
+    function requestFile() {
+        var filePath = "libraries/list-functions.rkt";
+        var httpReq = new XMLHttpRequest();
+        httpReq.open("get", filePath, true);
+        httpReq.onreadystatechange = function() {
+            if (httpReq.readyState===4) {
+                var response = httpReq.responseText;
+                ready = true;
+                importCode(response);
+                outputlog("Libraries loaded!");
+                
+            }
+        }
+        httpReq.send();
+    }
+    requestFile();
+}
 
 function tokenize(input) {
     rawCode = textfield.value;
@@ -582,26 +616,27 @@ function importCode(str){
 };
 
 function evaluate() {
-    var rawCode = textfield.value;
-    var tokenizedInput = tokenize(rawCode);
-    
-    console.log(tokenizedInput);
+    if (ready) {
+        var rawCode = textfield.value;
+        var tokenizedInput = tokenize(rawCode);
+        
+        console.log(tokenizedInput);
 
-    var syntaxStrTreeBlocks = parseStr(tokenizedInput);
-    if (!syntaxStrTreeBlocks) {
-        //error occurred
-        outputlog("Error occurred parsing or tokenizing code.");
-        return null;
-    }
-    //var output = syntaxStrTreeBlocks.map(printCode).reduce(function(prev,cur,i,arr) { return prev+(i>0?"\n":"")+cur; },"");
-    //console.log("\n"+output);
-    
-    stepExp = syntaxStrTreeBlocks; 
-    stepExp = parseStepExpBlocks(stepExp);
-    while (stepExp.length > 0) {
+        var syntaxStrTreeBlocks = parseStr(tokenizedInput);
+        if (!syntaxStrTreeBlocks) {
+            //error occurred
+            outputlog("Error occurred parsing or tokenizing code.");
+            return null;
+        }
+        //var output = syntaxStrTreeBlocks.map(printCode).reduce(function(prev,cur,i,arr) { return prev+(i>0?"\n":"")+cur; },"");
+        //console.log("\n"+output);
+        
+        stepExp = syntaxStrTreeBlocks; 
         stepExp = parseStepExpBlocks(stepExp);
+        while (stepExp.length > 0) {
+            stepExp = parseStepExpBlocks(stepExp);
+        }
     }
-    
 };
 
 function printCode(syntaxStrTreeBlocks) {
