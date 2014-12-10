@@ -84,22 +84,28 @@ var Lambda = function (ids, body, namespace) {
     this.type="Lambda";
     
     this.name = "lambda";
-    this.paramCount = ids.length;
-    /* if (paramId.length >=3 && paramId[length-2] ==".") {
-        this.paramCount = paramIdlength-1;
+    this.minParamCount = ids.length;
+    this.hasRestOperator = false;
+    var restDot = ids.indexOf(".");
+    if (restDot!== -1 && restDot + 2 === ids.length) {
+        this.hasRestOperator = true;
+        this.minParamCount = restDot;       
     }
-    else {
-        this.paramId = paramId;
-    } */
+    
     this.ids=ids;
     this.body = body;
     this.inheritedNamespace = namespace;
     
     this.eval = function (syntaxStrTreeArg, namespace) {
         var lambdaNamespace = Namespace(this.inheritedNamespace);
-        if (syntaxStrTreeArg.length - 1 === ids.length) {
-            for (var i=0; i< ids.length; ++i) {
+        if (syntaxStrTreeArg.length - 1 == this.minParamCount 
+        || (syntaxStrTreeArg.length - 1 >= this.minParamCount && this.hasRestOperator)) {
+            for (var i=0; i< this.minParamCount; ++i) {
                 lambdaNamespace[ids[i]]=syntaxStrTreeArg[i+1];
+            }
+            if (this.hasRestOperator) {
+                listMake = ["list"].concat(syntaxStrTreeArg.slice(this.minParamCount+1));
+                lambdaNamespace[ids[this.minParamCount+1]] = parseExpTree(listMake,lambdaNamespace);
             }
             var result = parseExpTree(body, lambdaNamespace);
             if (result)
@@ -505,9 +511,42 @@ function populateStandardFunctions(namespace) {
             return null;
         }         
     }
+    namespace["list"] = new Lambda([".","lst"], new Exp(), namespace);
+    namespace["list"].eval = function(syntaxStrTreeArg, namespace) {
+        var cons = new Empty();
+        for (var i=syntaxStrTreeArg.length-1; i >= 1; --i) {
+            var cell = new Cell();
+            cell.right = cons;
+            cell.left = syntaxStrTreeArg[i];
+            cons = cell;
+        }
+        return cons;
+    }
     namespace["identity"] = new Lambda(["x"], new Exp(), namespace);
     namespace["identity"].eval = function(syntaxStrTreeArg, namespace) {
         return syntaxStrTreeArg[1];
+    }
+    namespace["apply"] = new Lambda(["fn","list-arg"], new Exp(), namespace);
+    namespace["apply"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length === 3 && parseExpTree(["list?", syntaxStrTreeArg[2]],namespace).value === true) {
+            var arr;
+            if (namespace["length"])
+                arr = new Array(parseExpTree(["length", syntaxStrTreeArg[2]],namespace).value + 1);
+            else 
+                arr = [];
+            arr[0]=syntaxStrTreeArg[1];
+            var count = 1;
+            var list = syntaxStrTreeArg[2];
+            while(list.type !== "Empty") {
+                arr[count]=list.left;
+                list = list.right;
+                count++;
+            }
+            return parseExpTree(arr, namespace);  
+        } else {
+            outputlog("apply was called incorrectly");
+            return null;
+        }
     }
 }
 populateStandardFunctions(globalNamespace);
@@ -860,7 +899,7 @@ function parseStepExpBlocks (syntaxStrBlocks) {
 function parseLookupType(expression,namespace) {
     //console.log("Tried parsing: "+ expression);
     if (expression instanceof Type)
-        return expression.eval();
+        return expression;
     else if (expression[0]==="\"" && expression[expression.length-1]==="\"")
         return new Str(expression.substring(1,expression.length-1));
     else if (expression[0]==="\'" && expression.length>1)
