@@ -74,7 +74,13 @@ var Cell = function (left, right) {
     this.left = left;
     this.right = right;
     this.toString = function () {
-        return "\(cons "+this.left.toString()+ " " + this.right.toString()+"\)";
+        var rest = this.right.toString();
+        if (rest.substring(0,6) ==="\(list " && rest.substring(rest.length-1) === "\)")
+            rest = rest.substring(5,rest.length-1);
+        else if (rest ==="empty")
+            rest = "";
+            
+        return "\(list "+this.left.toString()+rest+"\)";
     }
 }
 var Lambda = function (ids, body, namespace) {

@@ -1,8 +1,3 @@
-(define (foldr fn bse lst)
-  (cond [(empty? lst) bse]
-        [else (fn (first lst)
-                  (foldr fn bse (rest lst)))]))
-
 (define (filter fn lst)
   (cond [(empty? lst) empty]
         [(fn (first lst))
@@ -33,3 +28,31 @@
           [else (apply full-map 
                        (cons fn
                              (cons lst rst)))])))
+
+(define (foldr fn bse lst . rst)
+  (local [(define (unary-foldr fn bse lst)
+            (cond [(empty? lst) bse]
+                  [else (fn (first lst)
+                            (unary-foldr fn bse (rest lst)))]))
+          (define (full-foldr fn bse lst . rst)
+            (cond [(empty? lst) bse]
+                  [else (apply fn 
+                               (cons (first lst)
+                                     (foldr cons 
+                                            (list (apply full-foldr 
+                                                         (cons fn 
+                                                               (cons bse
+                                                                     (cons (rest lst)
+                                                                           (map rest rst))))))                                            
+                                            (map first rst))))]))]
+    (cond [(empty? rst) (unary-foldr fn bse lst)]
+          [else (apply full-foldr 
+                       (cons fn
+                             (cons bse
+                                   (cons lst rst))))])))
+
+(define (list-ref lst index)
+  (cond [(> index 0) (list-ref (rest lst)
+                               (- index 1))]
+        [else (first lst)]))
+
