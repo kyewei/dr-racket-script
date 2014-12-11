@@ -91,10 +91,10 @@ var Lambda = function (ids, body, namespace) {
     
     this.name = "lambda";
     this.minParamCount = ids.length;
-    this.hasRestOperator = false;
+    this.hasRestArgument = false;
     var restDot = ids.indexOf(".");
     if (restDot!== -1 && restDot + 2 === ids.length) {
-        this.hasRestOperator = true;
+        this.hasRestArgument = true;
         this.minParamCount = restDot;       
     }
     
@@ -105,11 +105,11 @@ var Lambda = function (ids, body, namespace) {
     this.eval = function (syntaxStrTreeArg, namespace) {
         var lambdaNamespace = Namespace(this.inheritedNamespace);
         if (syntaxStrTreeArg.length - 1 == this.minParamCount 
-        || (syntaxStrTreeArg.length - 1 >= this.minParamCount && this.hasRestOperator)) {
+        || (syntaxStrTreeArg.length - 1 >= this.minParamCount && this.hasRestArgument)) {
             for (var i=0; i< this.minParamCount; ++i) {
                 lambdaNamespace[ids[i]]=syntaxStrTreeArg[i+1];
             }
-            if (this.hasRestOperator) {
+            if (this.hasRestArgument) {
                 listMake = ["list"].concat(syntaxStrTreeArg.slice(this.minParamCount+1));
                 lambdaNamespace[ids[this.minParamCount+1]] = parseExpTree(listMake,lambdaNamespace);
             }
@@ -217,6 +217,10 @@ function populateSpecialForms() {
         // (local (exp exp ... exp) body)
         
         var localNamespace = Namespace(namespace);
+        
+        // make id's first
+        syntaxStrTree[1].map(function(cur,i,arr) { localNamespace[(Array.isArray(cur[1])?cur[1][0]:cur[1])]=null; });
+        // THEN bind
         var defEval = syntaxStrTree[1].map(function(cur,i,arr) { return parseExpTree(cur,localNamespace); });
         var defSuccess = defEval.reduce(function(prev,cur,i,arr) { return prev && cur; }, true);
         if (defSuccess) {
@@ -390,6 +394,23 @@ function populateStandardFunctions(namespace) {
             return null;
         }
     }
+    namespace["="] = new Lambda(["x","y"], new Exp(), namespace);
+    namespace["="].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length <= 2) {
+            outputlog("= requires at least 2 arguments.");
+            return null;
+        }
+        for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
+            if (syntaxStrTreeArg[i].type === "Num")
+                equal = equal && (syntaxStrTreeArg[i].value === syntaxStrTreeArg[i+1].value);
+            else {
+                outputlog("Not all arguments were Num Type");
+                return null;
+            }
+        }
+        return new Bool(equal);
+    }
     namespace["<"] = new Lambda(["x","y"], new Exp(), namespace);
     namespace["<"].eval = function(syntaxStrTreeArg, namespace) {
         var equal = true;
@@ -457,6 +478,15 @@ function populateStandardFunctions(namespace) {
             }
         }
         return new Bool(equal);
+    }
+    namespace["not"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["not"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length == 2 && syntaxStrTreeArg[1].type === "Bool") {
+            return new Bool(!syntaxStrTreeArg[1].value);
+        } else {
+            outputlog("not did not receive 1 Bool.");
+            return null;
+        }
     }
     namespace["cons"] = new Lambda(["x","y"], new Exp(), namespace);
     namespace["cons"].eval = function(syntaxStrTreeArg, namespace) {
@@ -576,6 +606,7 @@ function prep() {
     clearbutton = document.getElementById("clear-button");
     submitbutton.onclick=evaluate;
     clearbutton.onclick = function () { outputfield.value = ""; };
+    outputlog("Please wait until (2) libraries are loaded.");
     loadCode();
 };
 
@@ -596,8 +627,8 @@ function loadCode(){
             throw new Error("This browser does not support XMLHttpRequest.");
         };
     }
-    function requestFile() {
-        var filePath = "libraries/list-functions.rkt";
+    function requestFile(filePath) {
+        ready = false;
         var httpReq = new XMLHttpRequest();
         httpReq.open("get", filePath, true);
         httpReq.onreadystatechange = function() {
@@ -605,13 +636,15 @@ function loadCode(){
                 var response = httpReq.responseText;
                 ready = true;
                 importCode(response);
-                outputlog("Libraries loaded!");
+                var filename = filePath.split(/\//g)
+                outputlog(filename[filename.length-1]+" library loaded!");
                 
             }
         }
         httpReq.send();
     }
-    requestFile();
+    requestFile("libraries/list-functions.rkt");
+    requestFile("libraries/other-functions.rkt");
 }
 
 function tokenize(input) {

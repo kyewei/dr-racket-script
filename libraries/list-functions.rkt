@@ -30,29 +30,64 @@
                              (cons lst rst)))])))
 
 (define (foldr fn bse lst . rst)
-  (local [(define (unary-foldr fn bse lst)
+  (local [(define (unary-foldr lst)
             (cond [(empty? lst) bse]
                   [else (fn (first lst)
-                            (unary-foldr fn bse (rest lst)))]))
-          (define (full-foldr fn bse lst . rst)
+                            (unary-foldr (rest lst)))]))
+          (define (full-foldr lst . rst)
             (cond [(empty? lst) bse]
                   [else (apply fn 
                                (cons (first lst)
-                                     (foldr cons 
-                                            (list (apply full-foldr 
-                                                         (cons fn 
-                                                               (cons bse
-                                                                     (cons (rest lst)
-                                                                           (map rest rst))))))                                            
-                                            (map first rst))))]))]
-    (cond [(empty? rst) (unary-foldr fn bse lst)]
+                                     (append (map first rst) 
+                                             (list (apply full-foldr 
+                                                          (cons (rest lst)
+                                                                (map rest rst)))))))]))]
+    (cond [(empty? rst) (unary-foldr lst)]
           [else (apply full-foldr 
-                       (cons fn
-                             (cons bse
-                                   (cons lst rst))))])))
+                       (cons lst rst))])))
 
+(define (foldl fn bse lst . rst)
+  (local [(define (unary-foldl lst)
+            (local [(define (unary-foldl/acc acc lst)
+                      (cond [(empty? lst) acc]
+                            [else (unary-foldl/acc (fn (first lst)
+                                                       acc)
+                                                   (rest lst))]))]
+              (unary-foldl/acc bse lst)))
+          (define (full-foldl lst . rst)
+            (local [(define (full-foldl/acc acc lst . rst)
+                      (cond [(empty? lst) acc]
+                            [else (apply full-foldl/acc
+                                         (cons (apply fn 
+                                                      (cons (first lst)
+                                                            (append (map first rst)
+                                                                    (list acc))))
+                                               (cons (rest lst)
+                                                     (map rest rst))))]))]
+              (apply full-foldl/acc (cons bse 
+                                          (cons lst rst)))))]
+    (cond [(empty? rst) (unary-foldl lst)]
+          [else (apply full-foldl 
+                       (cons lst rst))])))
+                       
 (define (list-ref lst index)
   (cond [(> index 0) (list-ref (rest lst)
                                (- index 1))]
         [else (first lst)]))
 
+(define (append . rst)
+  (cond [(empty? rst) empty]
+        [else (foldr cons 
+                     (apply append (rest rst)) 
+                     (first rst))]))
+
+(define (build-list num fn)
+  (local [(define (build-list/acc count fn)
+            (cond [(< count num) 
+                   (cons (fn count)
+                         (build-list/acc (+ 1 count) fn))]
+                  [else empty]))]
+    (build-list/acc 0 fn)))
+
+(define (reverse lst)
+  (foldl cons empty lst))
