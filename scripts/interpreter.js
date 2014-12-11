@@ -605,6 +605,7 @@ function prep() {
     submitbutton = document.getElementById("submit-button");
     clearbutton = document.getElementById("clear-button");
     submitbutton.onclick=evaluate;
+    textfield.onkeyup = automaticIndent;
     clearbutton.onclick = function () { outputfield.value = ""; };
     outputlog("Please wait until (2) libraries are loaded.");
     loadCode();
@@ -612,6 +613,129 @@ function prep() {
 
 function outputlog(str) {
     outputfield.value += str+"\n";
+};
+
+function automaticIndent(e) {
+    
+    // Cross-browser caret position code source: 
+    // http://stackoverflow.com/questions/2897155/get-cursor-position-in-characters-within-a-text-input-field
+    function doGetCaretPosition (oField) {
+      // Initialize
+      var iCaretPos = 0;
+      // IE Support
+      if (document.selection) {
+        // Set focus on the element
+        oField.focus ();
+        // To get cursor position, get empty selection range
+        var oSel = document.selection.createRange ();
+        // Move selection start to 0 position
+        oSel.moveStart ('character', -oField.value.length);
+        // The caret position is selection length
+        iCaretPos = oSel.text.length;
+      }
+      // Firefox support
+      else if (oField.selectionStart || oField.selectionStart == '0')
+        iCaretPos = oField.selectionDirection=='backward' ? oField.selectionStart : oField.selectionEnd;
+      // Return results
+      return (iCaretPos);
+    }
+
+    if (e.keyCode === 13) {
+        var caretSpot = doGetCaretPosition(textfield);
+        //console.log(caretSpot);
+        
+        var tokenizeInput = tokenize(textfield.value);
+        var tokenizeInputIndexes = new Array(tokenizeInput.length);
+        var tokenIndex = 0;
+        var nearestLineBreak =0;
+        var caretFound = false;
+        var caretToToken;
+        for (var i=0; i< textfield.value.length && tokenIndex < tokenizeInputIndexes.length; ++i) {
+            if (textfield.value.charAt(i-1) ==="\n")
+                nearestLineBreak = i;
+            if (!caretToToken && i >= caretSpot) {
+                caretToToken=tokenIndex-1;
+                caretFound=true;
+            }
+            if (tokenizeInput[tokenIndex] === textfield.value.substring(i, i+ tokenizeInput[tokenIndex].length)) {
+                tokenizeInputIndexes[tokenIndex] = i - nearestLineBreak;
+                i = i+tokenizeInput[tokenIndex].length-1;
+                tokenIndex++;               
+            }
+        }
+        if (!caretFound)
+            caretToToken = tokenizeInput.length-1;
+        
+        //console.log("caretToToken: "+caretToToken);
+        //console.log(tokenizeInput);
+        //console.log(tokenizeInputIndexes);     
+        
+        if (tokenizeInput[caretToToken] ==="(" || tokenizeInput[caretToToken] ==="[") {
+            textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[caretToToken]+2).join(" ") + textfield.value.substring(caretSpot).trim();
+        } else{
+            var hasBracket = false;
+            var bracketIndex =0;
+            var diff = 0;
+            for (var i=caretToToken; i>=0; --i) {
+                if (tokenizeInput[i] === ")" || tokenizeInput[i] === "]")
+                    diff++;
+                else if (tokenizeInput[i] === "(" || tokenizeInput[i] === "[")
+                    diff--;
+                if (diff<0) {
+                    bracketIndex=i;
+                    hasBracket = true;
+                    i=-1; //exit loop
+                }
+            }
+            if (hasBracket) {
+                var keyword = tokenizeInput[bracketIndex+1];
+                var inLineArguments = !(bracketIndex+1 +1 == tokenizeInput.length);
+                //console.log("bracketIndex+1:" +(bracketIndex+1));
+                //console.log("tokenizeInput.length:"+ tokenizeInput.length);
+                //console.log("inLineArguments:"+inLineArguments);
+                
+                function searchBackwards() {
+                    if (tokenizeInput[caretToToken] === ")" || tokenizeInput[caretToToken] === "]") {
+                        var bracketIndex =0;
+                        var diff = 0;
+                        for (var i=caretToToken-1; i>=0; --i) {
+                            if (tokenizeInput[i] === ")" || tokenizeInput[i] === "]")
+                                diff++;
+                            else if (tokenizeInput[i] === "(" || tokenizeInput[i] === "[")
+                                diff--;
+                            if (diff<0) {
+                                bracketIndex=i;
+                                i=-1; //exit loop
+                            }
+                        }
+                        return bracketIndex;
+                    } else {
+                        return caretToToken;
+                    }
+                };
+                
+                if (keyword === "(" || keyword === "[") { //lambda
+                    textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+1).join(" ") + textfield.value.substring(caretSpot).trim();
+                } else if (["define", "local"].indexOf(keyword)!=-1) {
+                    textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+2).join(" ") + textfield.value.substring(caretSpot).trim();
+                } else if (["lambda", "let", "let*", "letrec"].indexOf(keyword)!=-1) {
+                    if (inLineArguments)
+                        textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+2).join(" ") + textfield.value.substring(caretSpot).trim();
+                    else
+                        textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+4).join(" ") + textfield.value.substring(caretSpot).trim();
+                } else if (["cond"].indexOf(keyword)!=-1) {
+                    if (inLineArguments)
+                        textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[searchBackwards()]+1).join(" ") + textfield.value.substring(caretSpot).trim();
+                    else
+                        textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+2).join(" ") + textfield.value.substring(caretSpot).trim();
+                } else { //regular function
+                    textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[searchBackwards()]+1).join(" ") + textfield.value.substring(caretSpot).trim();
+                }
+            } else {
+                textfield.value = textfield.value.substring(0,caretSpot) + textfield.value.substring(caretSpot).trim();
+            }
+        }
+    }
 };
 
 function loadCode(){
@@ -648,8 +772,7 @@ function loadCode(){
 }
 
 function tokenize(input) {
-    rawCode = textfield.value;
-    var temp = rawCode.replace(/[\(\)\[\]]/g, function(a){return " "+a+" ";})
+    var temp = input.replace(/[\(\)\[\]]/g, function(a){return " "+a+" ";})
     //|(?=[\(\)\[\]])|(?<=[\(\)\[\]])
     // Why does JS not support positive look-behind? :(
     //console.log(temp);
