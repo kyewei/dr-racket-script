@@ -9,7 +9,12 @@
         <h2>Evaluator: </h2>
         <textarea rows="10" 
                   cols="100" 
-                  placeholder="Fill me with Scheme code!"
+                  type="text"
+                  autocomplete="off" 
+                  autocorrect="off" 
+                  autocapitalize="off" 
+                  spellcheck="false"
+                  placeholder="Place your code here!"
                   id="code-field"></textarea>
         <br>
         <button type="button" 
@@ -20,7 +25,8 @@
         <textarea rows="8" 
                   cols="100" 
                   placeholder="Output is empty!"
-                  id="code-output"></textarea>
+                  id="code-output"
+                  readonly></textarea>
         <br>
         <button type="button" 
                 id="clear-button">Clear</button>
