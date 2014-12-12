@@ -7,6 +7,7 @@ In its current state, it does not fully support all native types (Symbol, Number
 Most list operations and higher order list processing functions are implemented however.
 The web page where the interpreter resides, specifically the evaluation textbox, also auto-indents on every Enter-key press. 
 
+Try it out [here](http://kyewei.github.io/dr-racket-script/)
 
 ###Implementation
 In order to create this, I had to use design patterns often found in functional programming.
