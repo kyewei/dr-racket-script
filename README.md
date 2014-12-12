@@ -71,7 +71,7 @@ Higher order functions were implemented with variadic arguments if they used the
     
 Other functions were also implemented, but are not discussed here.
 
-###Implemented in the Future
+###To Implement in the Future
 * Structures
 * More special forms (maybe)
 * More functions
