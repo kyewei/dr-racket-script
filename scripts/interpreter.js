@@ -618,28 +618,39 @@ function outputlog(str) {
 function automaticIndent(e) {
     
     // Cross-browser caret position code source: 
-    // http://stackoverflow.com/questions/2897155/get-cursor-position-in-characters-within-a-text-input-field
-    function doGetCaretPosition (oField) {
-      // Initialize
-      var iCaretPos = 0;
-      // IE Support
-      if (document.selection) {
-        // Set focus on the element
-        oField.focus ();
-        // To get cursor position, get empty selection range
-        var oSel = document.selection.createRange ();
-        // Move selection start to 0 position
-        oSel.moveStart ('character', -oField.value.length);
-        // The caret position is selection length
-        iCaretPos = oSel.text.length;
-      }
-      // Firefox support
-      else if (oField.selectionStart || oField.selectionStart == '0')
-        iCaretPos = oField.selectionDirection=='backward' ? oField.selectionStart : oField.selectionEnd;
-      // Return results
-      return (iCaretPos);
+    // http://stackoverflow.com/questions/512528/set-cursor-position-in-html-textbox
+    function doGetCaretPosition (ctrl) {
+        var CaretPos = 0;
+        // IE Support
+        if (document.selection) {
+            ctrl.focus ();
+            var Sel = document.selection.createRange ();
+            Sel.moveStart ('character', -ctrl.value.length);
+            CaretPos = Sel.text.length;
+        }
+        // Firefox support
+        else if (ctrl.selectionStart || ctrl.selectionStart == '0')
+            CaretPos = ctrl.selectionStart;
+        return (CaretPos);
     }
-
+    function setCaretPosition(ctrl, pos)
+    {
+        if(ctrl.setSelectionRange)
+        {
+            ctrl.focus();
+            ctrl.setSelectionRange(pos,pos);
+        }
+        else if (ctrl.createTextRange) {
+            var range = ctrl.createTextRange();
+            range.collapse(true);
+            range.moveEnd('character', pos);
+            range.moveStart('character', pos);
+            range.select();
+        }
+    }
+    function trim(str) {// trim that removes whitespace but not newlines;
+        return str.replace(/^[^\S\n]+|\s+$/g,'');
+    }
     if (e.keyCode === 13) {
         var caretSpot = doGetCaretPosition(textfield);
         //console.log(caretSpot);
@@ -671,7 +682,8 @@ function automaticIndent(e) {
         //console.log(tokenizeInputIndexes);     
         
         if (tokenizeInput[caretToToken] ==="(" || tokenizeInput[caretToToken] ==="[") {
-            textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[caretToToken]+2).join(" ") + textfield.value.substring(caretSpot).trim();
+            textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[caretToToken]+2).join(" ") + trim(textfield.value.substring(caretSpot));
+            setCaretPosition(textfield, caretSpot + tokenizeInputIndexes[caretToToken]+1);
         } else{
             var hasBracket = false;
             var bracketIndex =0;
@@ -715,24 +727,34 @@ function automaticIndent(e) {
                 };
                 
                 if (keyword === "(" || keyword === "[") { //lambda
-                    textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+1).join(" ") + textfield.value.substring(caretSpot).trim();
+                    textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+1).join(" ") + trim(textfield.value.substring(caretSpot));
+                    setCaretPosition(textfield, caretSpot + tokenizeInputIndexes[bracketIndex+1]+0);
                 } else if (["define", "local"].indexOf(keyword)!=-1) {
-                    textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+2).join(" ") + textfield.value.substring(caretSpot).trim();
+                    textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+2).join(" ") + trim(textfield.value.substring(caretSpot));
+                    setCaretPosition(textfield, caretSpot + tokenizeInputIndexes[bracketIndex+1]+1);
                 } else if (["lambda", "let", "let*", "letrec"].indexOf(keyword)!=-1) {
-                    if (inLineArguments)
-                        textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+2).join(" ") + textfield.value.substring(caretSpot).trim();
-                    else
-                        textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+4).join(" ") + textfield.value.substring(caretSpot).trim();
+                    if (inLineArguments) {
+                        textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+2).join(" ") + trim(textfield.value.substring(caretSpot));
+                        setCaretPosition(textfield, caretSpot + tokenizeInputIndexes[bracketIndex+1]+1);
+                    } else {
+                        textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+4).join(" ") + trim(textfield.value.substring(caretSpot));
+                        setCaretPosition(textfield, caretSpot + tokenizeInputIndexes[bracketIndex+1]+3);
+                    }
                 } else if (["cond"].indexOf(keyword)!=-1) {
-                    if (inLineArguments)
-                        textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[searchBackwards()]+1).join(" ") + textfield.value.substring(caretSpot).trim();
-                    else
-                        textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+2).join(" ") + textfield.value.substring(caretSpot).trim();
+                    if (inLineArguments) {
+                        textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[searchBackwards()]+1).join(" ") + trim(textfield.value.substring(caretSpot));
+                        setCaretPosition(textfield, caretSpot + tokenizeInputIndexes[searchBackwards()]+0);
+                    } else {
+                        textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+2).join(" ") + trim(textfield.value.substring(caretSpot));
+                        setCaretPosition(textfield, caretSpot + tokenizeInputIndexes[bracketIndex+1]+1);
+                    }
                 } else { //regular function
-                    textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[searchBackwards()]+1).join(" ") + textfield.value.substring(caretSpot).trim();
+                    textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[searchBackwards()]+1).join(" ") + trim(textfield.value.substring(caretSpot));
+                    setCaretPosition(textfield, caretSpot + tokenizeInputIndexes[searchBackwards()]);
                 }
             } else {
                 textfield.value = textfield.value.substring(0,caretSpot) + textfield.value.substring(caretSpot).trim();
+                setCaretPosition(textfield, caretSpot);
             }
         }
     }
