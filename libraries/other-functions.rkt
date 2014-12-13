@@ -8,4 +8,26 @@
 
 (define (negative? n) (< n 0))
 
+(define (even? num)
+  (zero? (modulo num 2)))
 
+(define (odd? num)
+  (= 1 (modulo num 2)))
+
+(define (integer? num)
+  (zero? (modulo num 1)))
+
+(define (max . rst)
+  (foldr (lambda (x y) (cond [(> x y) x]
+                             [else y]))
+         (first rst)
+         rst))
+
+(define (min . rst)
+  (foldr (lambda (x y) (cond [(> x y) y]
+                             [else x]))
+         (first rst)
+         rst))
+
+(define (sqr num)
+  (* num num))
