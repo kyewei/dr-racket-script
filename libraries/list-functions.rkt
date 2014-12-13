@@ -74,6 +74,11 @@
   (cond [(> index 0) (list-ref (rest lst)
                                (- index 1))]
         [else (first lst)]))
+        
+(define (list-tail lst index)
+  (cond [(> index 0) (list-tail (rest lst)
+                                (- index 1))]
+        [else lst]))
 
 (define (append . rst)
   (cond [(empty? rst) empty]
@@ -91,3 +96,39 @@
 
 (define (reverse lst)
   (foldl cons empty lst))
+  
+(define (second lst) (list-ref lst 1))
+
+(define (third lst) (list-ref lst 2))
+
+(define (fourth lst) (list-ref lst 3))
+
+(define (fifth lst) (list-ref lst 4))
+
+(define (sixth lst) (list-ref lst 5))
+
+(define (seventh lst) (list-ref lst 6))
+
+(define (eighth lst) (list-ref lst 7))
+
+(define (ninth lst) (list-ref lst 8))
+
+(define (tenth lst) (list-ref lst 9))
+
+(define null? empty?)
+
+(define car first)
+
+(define cdr rest)
+
+(define cadr second)
+
+(define caddr third)
+
+(define cadddr fourth)
+
+(define (cddr lst) (list-tail lst 2))
+
+(define (cdddr lst) (list-tail lst 3))
+
+(define (cddddr lst) (list-tail lst 4))
