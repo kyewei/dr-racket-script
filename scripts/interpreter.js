@@ -318,9 +318,40 @@ function populateStandardFunctions(namespace) {
     namespace["expt"].eval = function(syntaxStrTreeArg, namespace) {
         return new Num(Math.pow(syntaxStrTreeArg[1], syntaxStrTreeArg[2]));
     }
-    namespace["sqr"] = new Lambda(["x"], new Exp(), namespace);
-    namespace["sqr"].eval = function(syntaxStrTreeArg, namespace) {
-        return parseExpTree(["expt", syntaxStrTreeArg[1], new Num(2)],namespace);
+    namespace["exp"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["exp"].eval = function(syntaxStrTreeArg, namespace) {
+        return new Num(Math.pow(Math.E, syntaxStrTreeArg[1].value));
+    }
+    namespace["log"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["log"].eval = function(syntaxStrTreeArg, namespace) {
+        return new Num(Math.log(syntaxStrTreeArg[1].value));
+    }
+    namespace["sin"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["sin"].eval = function(syntaxStrTreeArg, namespace) {
+        return new Num(Math.sin(syntaxStrTreeArg[1].value));
+    }
+    namespace["cos"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["cos"].eval = function(syntaxStrTreeArg, namespace) {
+        return new Num(Math.cos(syntaxStrTreeArg[1].value));
+    }
+    namespace["tan"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["tan"].eval = function(syntaxStrTreeArg, namespace) {
+        return new Num(Math.tan(syntaxStrTreeArg[1].value));
+    }
+    namespace["asin"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["asin"].eval = function(syntaxStrTreeArg, namespace) {
+        return new Num(Math.asin(syntaxStrTreeArg[1].value));
+    }
+    namespace["acos"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["acos"].eval = function(syntaxStrTreeArg, namespace) {
+        return new Num(Math.acos(syntaxStrTreeArg[1].value));
+    }
+    namespace["atan"] = new Lambda(["x","y"], new Exp(), namespace);
+    namespace["atan"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length ===2)
+            return new Num(Math.atan(syntaxStrTreeArg[1].value));
+        else 
+            return new Num(Math.atan2(syntaxStrTreeArg[1].value,syntaxStrTreeArg[2].value));
     }
     namespace["+"] = new Lambda(["x","y"], new Exp(), namespace);
     namespace["+"].eval = function(syntaxStrTreeArg, namespace) {
@@ -478,6 +509,103 @@ function populateStandardFunctions(namespace) {
             }
         }
         return new Bool(equal);
+    }
+    namespace["remainder"] = new Lambda(["num","mod"], new Exp(), namespace);
+    namespace["remainder"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length !== 3) {
+            outputlog("remainder requires exactly 2 arguments.");
+            return null;
+        }
+        return new Num(syntaxStrTreeArg[1].value % syntaxStrTreeArg[2].value);
+    }
+    namespace["modulo"] = new Lambda(["num","mod"], new Exp(), namespace);
+    namespace["modulo"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length !== 3) {
+            outputlog("modulo requires exactly 2 arguments.");
+            return null;
+        }
+        var remainder = syntaxStrTreeArg[1].value % syntaxStrTreeArg[2].value;
+        if (syntaxStrTreeArg[1].value * syntaxStrTreeArg[2].value < 0) // if signs are opposite
+            while(remainder* syntaxStrTreeArg[2].value < 0)
+                remainder += syntaxStrTreeArg[2].value;
+        return new Num(remainder);
+    }
+    namespace["abs"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["abs"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length !== 2) {
+            outputlog("abs requires exactly 1 argument.");
+            return null;
+        }
+        return new Num(Math.abs(syntaxStrTreeArg[1].value));
+    }
+    namespace["floor"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["floor"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length !== 2) {
+            outputlog("floor requires exactly 1 argument.");
+            return null;
+        }
+        return new Num(Math.floor(syntaxStrTreeArg[1].value));
+    }
+    namespace["ceiling"] = new Lambda(["x"], new Exp(), namespace);
+    namespace["ceiling"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length !== 2) {
+            outputlog("ceiling requires exactly 1 argument.");
+            return null;
+        }
+        return new Num(Math.ceil(syntaxStrTreeArg[1].value));
+    }
+    namespace["string=?"] = new Lambda(["str1","str2"], new Exp(), namespace);
+    namespace["string=?"].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length <= 2) {
+            outputlog("string=? requires at least 2 arguments.");
+            return null;
+        }
+        for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
+            if (syntaxStrTreeArg[i].type === "Str")
+                equal = equal && (syntaxStrTreeArg[i].value === syntaxStrTreeArg[i+1].value);
+            else {
+                outputlog("Not all arguments were Str Type");
+                return null;
+            }
+        }
+        return new Bool(equal);
+    }
+    namespace["substring"] = new Lambda(["str","start",".","end"], new Exp(), namespace);
+    namespace["substring"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length <= 2 && syntaxStrTreeArg[1].type !== "Str") {
+            outputlog("substring requires at least 2 arguments.");
+            return null;
+        }
+        var str = syntaxStrTreeArg[1].value;
+        var start = syntaxStrTreeArg[2].value;
+        var end;
+        if (syntaxStrTreeArg[3])
+            end = syntaxStrTreeArg[3].value;
+        else 
+            end = str.length;
+        return new Str(str.substring(start,end));
+    }
+    namespace["string-length"] = new Lambda(["str"], new Exp(), namespace);
+    namespace["string-length"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length <= 2 && syntaxStrTreeArg[1].type !== "Str") {
+            outputlog("string-length requires at least 2 arguments.");
+            return null;
+        }
+        return new Num(syntaxStrTreeArg[1].value.length);
+    }
+    namespace["string-append"] = new Lambda([".","rststr"], new Exp(), namespace);
+    namespace["string-append"].eval = function(syntaxStrTreeArg, namespace) {
+        var str = "";
+        for (var i=1; i< syntaxStrTreeArg.length; ++i) {
+            if (syntaxStrTreeArg[i].type === "Str")
+                str += syntaxStrTreeArg[i].value;
+            else {
+                outputlog("Not all arguments were Str Type");
+                return null;
+            }
+        }
+        return new Str(str);
     }
     namespace["not"] = new Lambda(["x"], new Exp(), namespace);
     namespace["not"].eval = function(syntaxStrTreeArg, namespace) {
