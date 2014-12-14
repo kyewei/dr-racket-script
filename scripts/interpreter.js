@@ -201,8 +201,12 @@ function populateSpecialForms() {
         
         var result;
         var id;
-        var body = syntaxStrTree[2];
         
+        var tailBody = syntaxStrTree[syntaxStrTree.length-1];
+        
+        // since define can accept multiple bodies, it is essentially a local/letrec type binding
+        var body = ["local",syntaxStrTree.slice(2,syntaxStrTree.length-1),tailBody];
+                
         if (Array.isArray(syntaxStrTree[1])) { //function define 
             id = syntaxStrTree[1][0];
             var lambdaIds = syntaxStrTree[1].slice(1);
@@ -335,8 +339,8 @@ function populateSpecialForms() {
         
         if (Array.isArray(syntaxStrTree)) {
             for (var i=1; i< syntaxStrTree.length; ++i) {
-                if (syntaxStrTree[i][0] && syntaxStrTree[i][0] === "else") {
-                    return parseExpTree(syntaxStrTree[i][1], namespace);
+                if (i === syntaxStrTree.length -1 || (syntaxStrTree[i][0] && syntaxStrTree[i][0] === "else")) {
+                    return parseExpTree((syntaxStrTree[i].length ===1? syntaxStrTree[i]: syntaxStrTree[i][1]), namespace);
                 }
                 else {
                     var predicate = parseExpTree(syntaxStrTree[i][0], namespace);
@@ -417,6 +421,21 @@ function populateStandardFunctions(namespace) {
             return null;
         }
         return new Racket.Bool(syntaxStrTreeArg[1].type === "Char");
+    }
+    namespace["equal?"] = new Racket.Lambda(["x","y",".","rst"], new Racket.Exp(), namespace);
+    namespace["equal?"].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length !== 3) {
+            outputlog("equal? requires 2 arguments.");
+            return null;
+        }
+        // I'll do this for now until I can figure out something better
+        equal = equal && (syntaxStrTreeArg[1] === syntaxStrTreeArg[2] // Structure are not equal? unless they are the same object, and they don't have value
+                            || ((syntaxStrTreeArg[1].type === syntaxStrTreeArg[2].type)
+                                && syntaxStrTreeArg[1].value
+                                && syntaxStrTreeArg[2].value
+                                && (syntaxStrTreeArg[1].value === syntaxStrTreeArg[2].value)));
+        return new Racket.Bool(equal);
     }
     namespace["expt"] = new Racket.Lambda(["x","y"], new Racket.Exp(), namespace);
     namespace["expt"].eval = function(syntaxStrTreeArg, namespace) {
