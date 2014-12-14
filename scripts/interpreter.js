@@ -429,11 +429,12 @@ function populateStandardFunctions(namespace) {
             outputlog("equal? requires 2 arguments.");
             return null;
         }
+        console.log(syntaxStrTreeArg[1].value +" " + syntaxStrTreeArg[2].value);
         // I'll do this for now until I can figure out something better
         equal = equal && (syntaxStrTreeArg[1] === syntaxStrTreeArg[2] // Structure are not equal? unless they are the same object, and they don't have value
                             || ((syntaxStrTreeArg[1].type === syntaxStrTreeArg[2].type)
-                                && syntaxStrTreeArg[1].value
-                                && syntaxStrTreeArg[2].value
+                                && !(syntaxStrTreeArg[1].value == null)
+                                && !(syntaxStrTreeArg[2].value == null)
                                 && (syntaxStrTreeArg[1].value === syntaxStrTreeArg[2].value)));
         return new Racket.Bool(equal);
     }
