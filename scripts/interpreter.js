@@ -1048,7 +1048,7 @@ function automaticIndent(e) {
                     setCaretPosition(textfield, caretSpot + tokenizeInputIndexes[searchBackwards()]);
                 }
             } else {
-                textfield.value = textfield.value.substring(0,caretSpot) + textfield.value.substring(caretSpot).trim();
+                textfield.value = textfield.value.substring(0,caretSpot) + trim(textfield.value.substring(caretSpot));
                 setCaretPosition(textfield, caretSpot);
             }
         }
@@ -1122,7 +1122,7 @@ function tokenize(input) {
             temp2 +=temp.charAt(i);
     }
     // Semicolon to account for comments
-    var temp3 = temp2.split(/[\s\n]+|\;.*\n/g); 
+    var temp3 = temp2.split(/[\s\n]+|\;.*/g); 
     return temp3.filter( function(str){return str!="";} );
 };
 
