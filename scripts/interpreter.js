@@ -320,6 +320,32 @@ function populateSpecialForms() {
             return null;
         }
     }
+    keywords["letrec"] = new Racket.SpecialForm();
+    keywords["letrec"].eval = function (syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "local"
+        // in the form of :
+        // (letrec ([id exp] [id exp] ...) body)
+        
+        var localNamespace = Namespace(namespace);
+        
+        // make id's first
+        syntaxStrTree[1].map(function(cur,i,arr) { localNamespace[cur[0]]=null; });
+        // THEN bind
+        var defEval = syntaxStrTree[1].map(function(cur,i,arr) { return parseExpTree(["define", cur[0], cur[1]], localNamespace); });
+        var defSuccess = defEval.reduce(function(prev,cur,i,arr) { return prev && cur; }, true);
+        if (defSuccess) {
+            var result = parseExpTree(syntaxStrTree[2],localNamespace);
+            if (result) {
+                return result;
+            } else {
+                outputlog("letrec body evaluation failed.");
+                return null;
+            } 
+        } else {
+            outputlog("letrec definition body evaluation failed.");
+            return null;
+        }
+    }
     keywords["lambda"] = new Racket.SpecialForm();
     keywords["lambda"].eval = function (syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "lambda"
