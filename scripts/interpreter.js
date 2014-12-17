@@ -201,12 +201,15 @@ function populateSpecialForms() {
         
         var result;
         var id;
-        
-        var tailBody = syntaxStrTree[syntaxStrTree.length-1];
-        
-        // since define can accept multiple bodies, it is essentially a local/letrec type binding
-        var body = ["local",syntaxStrTree.slice(2,syntaxStrTree.length-1),tailBody];
-                
+        var body;
+        if (syntaxStrTree.length> 3) {
+            var tailBody = syntaxStrTree[syntaxStrTree.length-1];
+            // since define can accept multiple bodies, it is essentially a local/letrec type binding
+            body = ["local",syntaxStrTree.slice(2,syntaxStrTree.length-1),tailBody];
+        }
+        else 
+            body = syntaxStrTree[2];
+            
         if (Array.isArray(syntaxStrTree[1])) { //function define 
             id = syntaxStrTree[1][0];
             var lambdaIds = syntaxStrTree[1].slice(1);
@@ -298,12 +301,11 @@ function populateSpecialForms() {
     keywords["local"].eval = function (syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "local"
         // in the form of :
-        // (local (exp exp ... exp) body)
-        
+        // (local [(define ...) ...)] body)
+
         var localNamespace = Namespace(namespace);
-        
         // make id's first
-        syntaxStrTree[1].map(function(cur,i,arr) { localNamespace[(Array.isArray(cur[1])?cur[1][0]:cur[1])]=null; });
+        syntaxStrTree[1].map(function(cur,i,arr) { if (cur[0]==="define") {localNamespace[(Array.isArray(cur[1])?cur[1][0]:cur[1])]=null;} });
         // THEN bind
         var defEval = syntaxStrTree[1].map(function(cur,i,arr) { return parseExpTree(cur,localNamespace); });
         var defSuccess = defEval.reduce(function(prev,cur,i,arr) { return prev && cur; }, true);
@@ -316,7 +318,106 @@ function populateSpecialForms() {
                 return null;
             } 
         } else {
-            outputlog("local definition body evaluation failed.");
+            outputlog("local definitions evaluation failed.");
+            return null;
+        }
+    }
+    keywords["letrec"] = new Racket.SpecialForm();
+    keywords["letrec"].eval = function (syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "local"
+        // in the form of :
+        // (letrec ([id exp] [id exp] ...) body)
+        
+        if (!syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && Array.isArray(cur) && cur.length ===2 ; }, true)) {
+            outputlog("letrec definitions not all id expression pairs");
+            return null;
+        }        
+        
+        var localNamespace = Namespace(namespace);
+        
+        // make id's first
+        syntaxStrTree[1].map(function(cur,i,arr) { localNamespace[cur[0]]=null; });
+        // THEN bind
+        syntaxStrTree[1].map(function(cur,i,arr) { localNamespace[cur[0]] = parseExpTree(cur[1], localNamespace); });
+        var defSuccess = syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && localNamespace[cur[0]] instanceof Racket.Type; }, true);
+        if (defSuccess) {
+            var result = parseExpTree(syntaxStrTree[2],localNamespace);
+            if (result) {
+                return result;
+            } else {
+                outputlog("letrec body evaluation failed.");
+                return null;
+            } 
+        } else {
+            outputlog("letrec definitions evaluation failed.");
+            return null;
+        }
+    }
+    keywords["let"] = new Racket.SpecialForm();
+    keywords["let"].eval = function (syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "local"
+        // in the form of :
+        // (let ([id exp] [id exp] ...) body)
+        
+        if (!syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && Array.isArray(cur) && cur.length ===2 ; }, true)) {
+            outputlog("let definitions not all id expression pairs");
+            return null;
+        }        
+        
+        var localNamespace = Namespace(namespace);
+        
+        // evaluate all, then bind all
+        var defSuccess = true;
+        var exprs = new Array(syntaxStrTree[1].length);
+        for (var i=0; i< syntaxStrTree[1].length; ++i) {
+            exprs[i]= parseExpTree(syntaxStrTree[1][i][1], localNamespace);
+        }
+        for (var i=0; i< syntaxStrTree[1].length; ++i) {
+            localNamespace[syntaxStrTree[1][i][0]] = exprs[i];
+            defSuccess = defSuccess && localNamespace[syntaxStrTree[1][i][0]] instanceof Racket.Type;
+        }
+        if (defSuccess) {
+            var result = parseExpTree(syntaxStrTree[2],localNamespace);
+            if (result) {
+                return result;
+            } else {
+                outputlog("let body evaluation failed.");
+                return null;
+            } 
+        } else {
+            outputlog("let definitions evaluation failed.");
+            return null;
+        }
+    }
+    keywords["let*"] = new Racket.SpecialForm();
+    keywords["let*"].eval = function (syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "local"
+        // in the form of :
+        // (let* ([id exp] [id exp] ...) body)
+        
+        if (!syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && Array.isArray(cur) && cur.length ===2 ; }, true)) {
+            outputlog("let* definitions not all id expression pairs");
+            return null;
+        }        
+        
+        var localNamespace = Namespace(namespace);
+        
+        // evaluate and bind as soon as each is available
+        var defSuccess = true;
+        for (var i=0; i< syntaxStrTree[1].length; ++i) {
+            localNamespace[syntaxStrTree[1][i][0]]= parseExpTree(syntaxStrTree[1][i][1], localNamespace);
+            defSuccess = defSuccess && localNamespace[syntaxStrTree[1][i][0]] instanceof Racket.Type;
+        }
+        if (defSuccess) {
+            var result = parseExpTree(syntaxStrTree[2],localNamespace);
+            if (result) {
+                return result;
+            } else {
+                outputlog("let* body evaluation failed.");
+                return null;
+            } 
+        } else {
+            outputlog("let* definitions evaluation failed.");
             return null;
         }
     }
@@ -429,13 +530,13 @@ function populateStandardFunctions(namespace) {
             outputlog("equal? requires 2 arguments.");
             return null;
         }
-        console.log(syntaxStrTreeArg[1].value +" " + syntaxStrTreeArg[2].value);
         // I'll do this for now until I can figure out something better
         equal = equal && (syntaxStrTreeArg[1] === syntaxStrTreeArg[2] // Structure are not equal? unless they are the same object, and they don't have value
-                            || ((syntaxStrTreeArg[1].type === syntaxStrTreeArg[2].type)
-                                && !(syntaxStrTreeArg[1].value == null)
-                                && !(syntaxStrTreeArg[2].value == null)
-                                && (syntaxStrTreeArg[1].value === syntaxStrTreeArg[2].value)));
+                            || ((syntaxStrTreeArg[1].type === syntaxStrTreeArg[2].type) 
+                                && ((syntaxStrTreeArg[1] instanceof Racket.List) && (syntaxStrTreeArg[1].toString() === syntaxStrTreeArg[2].toString()))
+                                    || (!(syntaxStrTreeArg[1].value == null)
+                                        && !(syntaxStrTreeArg[2].value == null)
+                                        && (syntaxStrTreeArg[1].value === syntaxStrTreeArg[2].value))));
         return new Racket.Bool(equal);
     }
     namespace["expt"] = new Racket.Lambda(["x","y"], new Racket.Exp(), namespace);
@@ -1431,6 +1532,9 @@ function parseExpTree (syntaxStrTree, namespace) {
         if (lookupExp) { 
             if (lookupExp.type === "SpecialForm") {//if special form, do not evaluate arguments, instead, branch off
                 return lookupExp.eval(syntaxStrTree, namespace);
+            } else if (lookupExp.type !== "Lambda") { // better be a function
+                outputlog(syntaxStrTree[0]+" is not a function.");
+                return null;
             }
             
             // evaluate the function call arguments first
