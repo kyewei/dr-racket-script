@@ -345,7 +345,7 @@ function populateSpecialForms() {
         // make id's first
         syntaxStrTree[1].map(function(cur,i,arr) { localNamespace[cur[0]]=null; });
         // THEN bind
-        syntaxStrTree[1].map(function(cur,i,arr) { localNamespace[cur[0]] = parseExpTree(cur[1], localNamespace); });
+        syntaxStrTree[1].map(function(cur,i,arr) { keywords["define"].eval(["define", cur[0], cur[1]],localNamespace); }); 
         var defSuccess = syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && localNamespace[cur[0]] instanceof Racket.Type; }, true);
         if (defSuccess) {
             var result = parseExpTree(syntaxStrTree[2],localNamespace);
@@ -380,8 +380,13 @@ function populateSpecialForms() {
             exprs[i]= parseExpTree(syntaxStrTree[1][i][1], localNamespace);
         }
         for (var i=0; i< syntaxStrTree[1].length; ++i) {
-            localNamespace[syntaxStrTree[1][i][0]] = exprs[i];
-            defSuccess = defSuccess && localNamespace[syntaxStrTree[1][i][0]] instanceof Racket.Type;
+            if (!(localNamespace.hasOwnProperty(syntaxStrTree[1][i][0])) || localNamespace[syntaxStrTree[1][i][0]] === null) {
+                localNamespace[syntaxStrTree[1][i][0]] = exprs[i];
+                defSuccess = defSuccess && localNamespace[syntaxStrTree[1][i][0]] instanceof Racket.Type;
+            } else {
+                outputlog("Namespace already contains bound id: "+syntaxStrTree[1][i][0]+".");
+                return false;
+            }
         }
         if (defSuccess) {
             var result = parseExpTree(syntaxStrTree[2],localNamespace);
