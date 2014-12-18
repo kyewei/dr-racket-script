@@ -13,8 +13,8 @@ function Namespace(inheritedNamespace) {
     Namespace.prototype = inheritedNamespace; 
     return new Namespace(); 
 };
-
-var globalNamespace = Namespace(null);
+var libraryNamespace = Namespace(null);
+var globalNamespace = Namespace(libraryNamespace);
 
 var Racket = {};
 
@@ -126,7 +126,7 @@ Racket.Lambda = function (ids, body, namespace) {
             if (result)
                 return result;
             else {
-                console.log("Lambda evaluation error.");
+                outputlog("Lambda evaluation error.");
                 return null;
             }
         } else {
@@ -220,10 +220,17 @@ function populateSpecialForms() {
         }
         
         if (result) {
-            namespace[id] = result;
-            return true; //for no errors
+            if (!(namespace.hasOwnProperty(id)) || namespace[id] === null) {
+                namespace[id] = result;
+                return true; //for no errors
+            } else {
+                console.log(namespace);
+                outputlog("Namespace already contains bound id: "+id+".");
+                return false;
+            }
         } else {
             outputlog("define body evaluation failed.");
+            return false;
         }
     };
     keywords["define-struct"] = new Racket.SpecialForm();
@@ -1001,7 +1008,7 @@ function populateStandardFunctions(namespace) {
         }
     }
 }
-populateStandardFunctions(globalNamespace);
+populateStandardFunctions(libraryNamespace);
     
     
 
@@ -1011,8 +1018,10 @@ populateStandardFunctions(globalNamespace);
 
 // ---------- INIT ----------
 
-
-var ready = false;
+var libraryFilesCount = 2;
+var libraryFilesLoaded = 0;
+var readyForUser = false;
+var libraryLoadMode = true;
 prep();
 
 function prep() {
@@ -1023,7 +1032,7 @@ function prep() {
     submitbutton.onclick=evaluate;
     textfield.onkeyup = automaticIndent;
     clearbutton.onclick = function () { outputfield.value = ""; };
-    outputlog("Please wait until (2) libraries are loaded.");
+    outputlog("Please wait until ("+libraryFilesCount+") libraries are loaded.");
     loadCode();
 };
 
@@ -1190,17 +1199,21 @@ function loadCode(){
         };
     }
     function requestFile(filePath) {
-        ready = false;
         var httpReq = new XMLHttpRequest();
         httpReq.open("get", filePath, true);
         httpReq.onreadystatechange = function() {
             if (httpReq.readyState===4) {
                 var response = httpReq.responseText;
-                ready = true;
+                libraryLoadMode = true;
                 importCode(response);
+                libraryFilesLoaded++;
                 var filename = filePath.split(/\//g)
                 outputlog(filename[filename.length-1]+" library loaded!");
-                
+                if (libraryFilesLoaded === libraryFilesCount){
+                    libraryLoadMode = false;
+                    readyForUser = true;
+                    outputlog("All libraries loaded!");
+                }
             }
         }
         httpReq.send();
@@ -1255,7 +1268,7 @@ function importCode(str){
 };
 
 function evaluate() {
-    if (ready) {
+    if (readyForUser || libraryLoadMode) {
         var rawCode = textfield.value;
         var tokenizedInput = tokenize(rawCode);
         
@@ -1270,10 +1283,18 @@ function evaluate() {
         //var output = syntaxStrTreeBlocks.map(printCode).reduce(function(prev,cur,i,arr) { return prev+(i>0?"\n":"")+cur; },"");
         //console.log("\n"+output);
         
+        var namespace;
+        if (libraryLoadMode) {
+            namespace = libraryNamespace;
+        } else {
+            globalNamespace = Namespace(libraryNamespace);
+            namespace = globalNamespace;
+        }
+        
         stepExp = syntaxStrTreeBlocks; 
-        stepExp = parseStepExpBlocks(stepExp);
+        stepExp = parseStepExpBlocks(stepExp, namespace);
         while (stepExp.length > 0) {
-            stepExp = parseStepExpBlocks(stepExp);
+            stepExp = parseStepExpBlocks(stepExp, namespace);
         }
     }
 };
@@ -1480,9 +1501,9 @@ function recursivelyBuildCodeTree(strBlock) {
 
 
 
-function parseStepExpBlocks (syntaxStrBlocks) {
+function parseStepExpBlocks (syntaxStrBlocks, namespace) {
     if (syntaxStrBlocks.length > 0) {
-        var exp = parseExpTree(syntaxStrBlocks[0], globalNamespace);
+        var exp = parseExpTree(syntaxStrBlocks[0], namespace);
         
         /*if (Array.isArray(exp)) {
             syntaxStrBlocks[0] = exp;
