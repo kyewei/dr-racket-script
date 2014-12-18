@@ -13,8 +13,8 @@ function Namespace(inheritedNamespace) {
     Namespace.prototype = inheritedNamespace; 
     return new Namespace(); 
 };
-
-var globalNamespace = Namespace(null);
+var libraryNamespace = Namespace(null);
+var globalNamespace = Namespace(libraryNamespace);
 
 var Racket = {};
 
@@ -108,7 +108,14 @@ Racket.Lambda = function (ids, body, namespace) {
     }
     
     this.ids=ids;
-    this.body = body;
+    
+    if (body.length> 1) {
+        var tailBody = body[body.length-1];
+        // since Lambda can accept multiple bodies, it is essentially a local/letrec type binding
+        this.body = ["local",body.slice(0,body.length-1),tailBody];
+    }
+    else 
+        this.body = body[0];
     this.inheritedNamespace = namespace;
     
     this.eval = function (syntaxStrTreeArg, namespace) {
@@ -116,17 +123,17 @@ Racket.Lambda = function (ids, body, namespace) {
         if (syntaxStrTreeArg.length - 1 == this.minParamCount 
         || (syntaxStrTreeArg.length - 1 >= this.minParamCount && this.hasRestArgument)) {
             for (var i=0; i< this.minParamCount; ++i) {
-                lambdaNamespace[ids[i]]=syntaxStrTreeArg[i+1];
+                lambdaNamespace[this.ids[i]]=syntaxStrTreeArg[i+1];
             }
             if (this.hasRestArgument) {
-                listMake = ["list"].concat(syntaxStrTreeArg.slice(this.minParamCount+1));
-                lambdaNamespace[ids[this.minParamCount+1]] = parseExpTree(listMake,lambdaNamespace);
+                var listMake = ["list"].concat(syntaxStrTreeArg.slice(this.minParamCount+1));
+                lambdaNamespace[this.ids[this.minParamCount+1]] = parseExpTree(listMake,lambdaNamespace);
             }
-            var result = parseExpTree(body, lambdaNamespace);
+            var result = parseExpTree(this.body, lambdaNamespace);
             if (result)
                 return result;
             else {
-                console.log("Lambda evaluation error.");
+                outputlog("Lambda evaluation error.");
                 return null;
             }
         } else {
@@ -197,33 +204,40 @@ function populateSpecialForms() {
         //assert syntaxStrTree[0] === "define"
         // in the form of :
         // (define id exp) for objects
-        // (define (function-name id id ... id) exp) for functions
+        // (define (function-name id ...) ... final-exp) for functions
         
         var result;
         var id;
         var body;
-        if (syntaxStrTree.length> 3) {
-            var tailBody = syntaxStrTree[syntaxStrTree.length-1];
-            // since define can accept multiple bodies, it is essentially a local/letrec type binding
-            body = ["local",syntaxStrTree.slice(2,syntaxStrTree.length-1),tailBody];
-        }
-        else 
-            body = syntaxStrTree[2];
             
         if (Array.isArray(syntaxStrTree[1])) { //function define 
             id = syntaxStrTree[1][0];
             var lambdaIds = syntaxStrTree[1].slice(1);
+            body = syntaxStrTree.slice(2);
             result = new Racket.Lambda(lambdaIds, body, namespace);
         } else { // object define
             id = syntaxStrTree[1];
+            if (syntaxStrTree.length === 3)
+                body = syntaxStrTree[2];
+            else {
+                outputlog("define received multiple expressions after identifier.");
+                return null;
+            }
             result = parseExpTree(body,namespace);
         }
         
         if (result) {
-            namespace[id] = result;
-            return true; //for no errors
+            if (!(namespace.hasOwnProperty(id)) || namespace[id] === null) {
+                namespace[id] = result;
+                return true; //for no errors
+            } else {
+                console.log(namespace);
+                outputlog("Namespace already contains bound id: "+id+".");
+                return false;
+            }
         } else {
             outputlog("define body evaluation failed.");
+            return false;
         }
     };
     keywords["define-struct"] = new Racket.SpecialForm();
@@ -338,7 +352,7 @@ function populateSpecialForms() {
         // make id's first
         syntaxStrTree[1].map(function(cur,i,arr) { localNamespace[cur[0]]=null; });
         // THEN bind
-        syntaxStrTree[1].map(function(cur,i,arr) { localNamespace[cur[0]] = parseExpTree(cur[1], localNamespace); });
+        syntaxStrTree[1].map(function(cur,i,arr) { keywords["define"].eval(["define", cur[0], cur[1]],localNamespace); }); 
         var defSuccess = syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && localNamespace[cur[0]] instanceof Racket.Type; }, true);
         if (defSuccess) {
             var result = parseExpTree(syntaxStrTree[2],localNamespace);
@@ -373,8 +387,13 @@ function populateSpecialForms() {
             exprs[i]= parseExpTree(syntaxStrTree[1][i][1], localNamespace);
         }
         for (var i=0; i< syntaxStrTree[1].length; ++i) {
-            localNamespace[syntaxStrTree[1][i][0]] = exprs[i];
-            defSuccess = defSuccess && localNamespace[syntaxStrTree[1][i][0]] instanceof Racket.Type;
+            if (!(localNamespace.hasOwnProperty(syntaxStrTree[1][i][0])) || localNamespace[syntaxStrTree[1][i][0]] === null) {
+                localNamespace[syntaxStrTree[1][i][0]] = exprs[i];
+                defSuccess = defSuccess && localNamespace[syntaxStrTree[1][i][0]] instanceof Racket.Type;
+            } else {
+                outputlog("Namespace already contains bound id: "+syntaxStrTree[1][i][0]+".");
+                return false;
+            }
         }
         if (defSuccess) {
             var result = parseExpTree(syntaxStrTree[2],localNamespace);
@@ -425,10 +444,10 @@ function populateSpecialForms() {
     keywords["lambda"].eval = function (syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "lambda"
         // in the form of :
-        // (local (id id ... id) body)
+        // (lambda (id ...) ... final-exp)
         
         var ids = syntaxStrTree[1];
-        var body = syntaxStrTree[2];
+        var body = syntaxStrTree.slice(2);
         
         return new Racket.Lambda(ids, body, namespace);
     }
@@ -1001,7 +1020,7 @@ function populateStandardFunctions(namespace) {
         }
     }
 }
-populateStandardFunctions(globalNamespace);
+populateStandardFunctions(libraryNamespace);
     
     
 
@@ -1011,19 +1030,22 @@ populateStandardFunctions(globalNamespace);
 
 // ---------- INIT ----------
 
-
-var ready = false;
+var libraryFilesCount = 2;
+var libraryFilesLoaded = 0;
+var readyForUser = false;
+var libraryLoadMode = true;
 prep();
 
 function prep() {
     textfield = document.getElementById("code-field");
     outputfield = document.getElementById("code-output");
     submitbutton = document.getElementById("submit-button");
+    checkbox = document.getElementById("auto-clear-checkbox");
     clearbutton = document.getElementById("clear-button");
     submitbutton.onclick=evaluate;
     textfield.onkeyup = automaticIndent;
     clearbutton.onclick = function () { outputfield.value = ""; };
-    outputlog("Please wait until (2) libraries are loaded.");
+    outputlog("Please wait until ("+libraryFilesCount+") libraries are loaded.");
     loadCode();
 };
 
@@ -1190,17 +1212,21 @@ function loadCode(){
         };
     }
     function requestFile(filePath) {
-        ready = false;
         var httpReq = new XMLHttpRequest();
         httpReq.open("get", filePath, true);
         httpReq.onreadystatechange = function() {
             if (httpReq.readyState===4) {
                 var response = httpReq.responseText;
-                ready = true;
+                libraryLoadMode = true;
                 importCode(response);
+                libraryFilesLoaded++;
                 var filename = filePath.split(/\//g)
                 outputlog(filename[filename.length-1]+" library loaded!");
-                
+                if (libraryFilesLoaded === libraryFilesCount){
+                    libraryLoadMode = false;
+                    readyForUser = true;
+                    outputlog("All libraries loaded!");
+                }
             }
         }
         httpReq.send();
@@ -1255,7 +1281,7 @@ function importCode(str){
 };
 
 function evaluate() {
-    if (ready) {
+    if (readyForUser || libraryLoadMode) {
         var rawCode = textfield.value;
         var tokenizedInput = tokenize(rawCode);
         
@@ -1270,10 +1296,20 @@ function evaluate() {
         //var output = syntaxStrTreeBlocks.map(printCode).reduce(function(prev,cur,i,arr) { return prev+(i>0?"\n":"")+cur; },"");
         //console.log("\n"+output);
         
+        if (checkbox.checked && readyForUser)
+            outputfield.value = "";
+        
+        var namespace;
+        if (libraryLoadMode) {
+            namespace = libraryNamespace;
+        } else {
+            globalNamespace = Namespace(libraryNamespace);
+            namespace = globalNamespace;
+        }
+        
         stepExp = syntaxStrTreeBlocks; 
-        stepExp = parseStepExpBlocks(stepExp);
         while (stepExp.length > 0) {
-            stepExp = parseStepExpBlocks(stepExp);
+            stepExp = parseStepExpBlocks(stepExp, namespace);
         }
     }
 };
@@ -1480,9 +1516,9 @@ function recursivelyBuildCodeTree(strBlock) {
 
 
 
-function parseStepExpBlocks (syntaxStrBlocks) {
+function parseStepExpBlocks (syntaxStrBlocks, namespace) {
     if (syntaxStrBlocks.length > 0) {
-        var exp = parseExpTree(syntaxStrBlocks[0], globalNamespace);
+        var exp = parseExpTree(syntaxStrBlocks[0], namespace);
         
         /*if (Array.isArray(exp)) {
             syntaxStrBlocks[0] = exp;
