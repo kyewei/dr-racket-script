@@ -108,7 +108,14 @@ Racket.Lambda = function (ids, body, namespace) {
     }
     
     this.ids=ids;
-    this.body = body;
+    
+    if (body.length> 1) {
+        var tailBody = body[body.length-1];
+        // since Lambda can accept multiple bodies, it is essentially a local/letrec type binding
+        this.body = ["local",body.slice(0,body.length-1),tailBody];
+    }
+    else 
+        this.body = body[0];
     this.inheritedNamespace = namespace;
     
     this.eval = function (syntaxStrTreeArg, namespace) {
@@ -116,13 +123,13 @@ Racket.Lambda = function (ids, body, namespace) {
         if (syntaxStrTreeArg.length - 1 == this.minParamCount 
         || (syntaxStrTreeArg.length - 1 >= this.minParamCount && this.hasRestArgument)) {
             for (var i=0; i< this.minParamCount; ++i) {
-                lambdaNamespace[ids[i]]=syntaxStrTreeArg[i+1];
+                lambdaNamespace[this.ids[i]]=syntaxStrTreeArg[i+1];
             }
             if (this.hasRestArgument) {
-                listMake = ["list"].concat(syntaxStrTreeArg.slice(this.minParamCount+1));
-                lambdaNamespace[ids[this.minParamCount+1]] = parseExpTree(listMake,lambdaNamespace);
+                var listMake = ["list"].concat(syntaxStrTreeArg.slice(this.minParamCount+1));
+                lambdaNamespace[this.ids[this.minParamCount+1]] = parseExpTree(listMake,lambdaNamespace);
             }
-            var result = parseExpTree(body, lambdaNamespace);
+            var result = parseExpTree(this.body, lambdaNamespace);
             if (result)
                 return result;
             else {
@@ -197,25 +204,25 @@ function populateSpecialForms() {
         //assert syntaxStrTree[0] === "define"
         // in the form of :
         // (define id exp) for objects
-        // (define (function-name id id ... id) exp) for functions
+        // (define (function-name id ...) ... final-exp) for functions
         
         var result;
         var id;
         var body;
-        if (syntaxStrTree.length> 3) {
-            var tailBody = syntaxStrTree[syntaxStrTree.length-1];
-            // since define can accept multiple bodies, it is essentially a local/letrec type binding
-            body = ["local",syntaxStrTree.slice(2,syntaxStrTree.length-1),tailBody];
-        }
-        else 
-            body = syntaxStrTree[2];
             
         if (Array.isArray(syntaxStrTree[1])) { //function define 
             id = syntaxStrTree[1][0];
             var lambdaIds = syntaxStrTree[1].slice(1);
+            body = syntaxStrTree.slice(2);
             result = new Racket.Lambda(lambdaIds, body, namespace);
         } else { // object define
             id = syntaxStrTree[1];
+            if (syntaxStrTree.length === 3)
+                body = syntaxStrTree[2];
+            else {
+                outputlog("define received multiple expressions after identifier.");
+                return null;
+            }
             result = parseExpTree(body,namespace);
         }
         
@@ -437,10 +444,10 @@ function populateSpecialForms() {
     keywords["lambda"].eval = function (syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "lambda"
         // in the form of :
-        // (local (id id ... id) body)
+        // (lambda (id ...) ... final-exp)
         
         var ids = syntaxStrTree[1];
-        var body = syntaxStrTree[2];
+        var body = syntaxStrTree.slice(2);
         
         return new Racket.Lambda(ids, body, namespace);
     }
