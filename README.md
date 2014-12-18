@@ -58,14 +58,18 @@ Proper namespacing and nesting was implemented through using JavaScript's protot
 These are the currently implemented special forms:
 
     (define id bodyexp)
-    (define (id args) bodyexp)
+    (define (id args) ... bodyexp)
     (define-struct type-id (id ...))
     (local [(define ...) ...] bodyexp)
     (cond [predicate? bodyexp] ... [else bodyexp])
     (if predicate true-bodyexp false-bodyexp)
-    (lambda (args ...) bodyexp)
+    (lambda (args ...) ... bodyexp)
     (or ...)
     (and ...)
+    (let ([id exp] ...) bodyexp)
+    (let* ([id exp] ...) bodyexp)
+    (letrec ([id exp] ...) bodyexp)
+    
 
 ###Implemented List and Higher Order Functions
 Higher order functions were implemented with variadic arguments if they supported them. 

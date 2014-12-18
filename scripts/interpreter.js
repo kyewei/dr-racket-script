@@ -1040,6 +1040,7 @@ function prep() {
     textfield = document.getElementById("code-field");
     outputfield = document.getElementById("code-output");
     submitbutton = document.getElementById("submit-button");
+    checkbox = document.getElementById("auto-clear-checkbox");
     clearbutton = document.getElementById("clear-button");
     submitbutton.onclick=evaluate;
     textfield.onkeyup = automaticIndent;
@@ -1295,6 +1296,9 @@ function evaluate() {
         //var output = syntaxStrTreeBlocks.map(printCode).reduce(function(prev,cur,i,arr) { return prev+(i>0?"\n":"")+cur; },"");
         //console.log("\n"+output);
         
+        if (checkbox.checked && readyForUser)
+            outputfield.value = "";
+        
         var namespace;
         if (libraryLoadMode) {
             namespace = libraryNamespace;
@@ -1304,7 +1308,6 @@ function evaluate() {
         }
         
         stepExp = syntaxStrTreeBlocks; 
-        stepExp = parseStepExpBlocks(stepExp, namespace);
         while (stepExp.length > 0) {
             stepExp = parseStepExpBlocks(stepExp, namespace);
         }
