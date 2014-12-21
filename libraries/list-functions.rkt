@@ -132,3 +132,20 @@
 (define (cdddr lst) (list-tail lst 3))
 
 (define (cddddr lst) (list-tail lst 4))
+
+(define (member elem lst)
+  (cond [(empty? lst) false]
+        [(equal? elem (first lst))
+         lst]
+        [else (member elem (rest lst))]))
+
+(define (remove* elems lst)
+  (filter (lambda (x)
+            (not (list? (member x elems))))
+          lst))
+
+(define (assf fn al)
+  (cond [(empty? al) false]
+        [(fn (first (first al)))
+         (first al)]
+        [else (assf fn (rest al))]))

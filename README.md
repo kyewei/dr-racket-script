@@ -69,6 +69,7 @@ These are the currently implemented special forms:
     (let ([id exp] ...) bodyexp)
     (let* ([id exp] ...) bodyexp)
     (letrec ([id exp] ...) bodyexp)
+    (set! id exp)
     
 
 ###Implemented List and Higher Order Functions
