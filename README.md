@@ -64,6 +64,7 @@ These are the currently implemented special forms:
     (cond [predicate? bodyexp] ... [else bodyexp])
     (if predicate true-bodyexp false-bodyexp)
     (lambda (args ...) ... bodyexp)
+    (case-lambda [(args ...) ... bodyexp] ...)
     (or ...)
     (and ...)
     (let ([id exp] ...) bodyexp)
@@ -84,12 +85,20 @@ their variadic counterparts required using (apply) and turned out not as efficie
     foldr
     foldl
     map
+    andmap
+    ormap
     filter
     append
     apply
-    list-ref
-    reverse
     list
+    list-ref
+    list-tail
+    build-list
+    reverse
+    assf
+    remove
+    remove*
+    member
     
 Other non-list functions were also implemented, but are not discussed here.
 

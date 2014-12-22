@@ -29,6 +29,40 @@
                        (cons fn
                              (cons lst rst)))])))
 
+(define (andmap fn lst . rst) 
+  (local [(define (unary-andmap lst)
+            (cond [(empty? lst) true]
+                  [else (local [(define fn-rslt (fn (first lst)))]
+                          (cond [(not fn-rslt) false]
+                                [else (unary-andmap (rest lst))]))]))
+          (define (full-andmap lst . rst)
+            (cond [(empty? lst) true]
+                  [else (local [(define fn-rslt (apply fn (cons (first lst)
+                                                                (map first rst))))]
+                          (cond [(not fn-rslt) false]
+                                [else (apply full-andmap (cons (rest lst)
+                                                               (map rest rst)))]))]))]
+    (cond [(empty? rst) (unary-andmap lst)]
+          [else (apply full-andmap 
+                       (cons lst rst))])))
+
+(define (ormap fn lst . rst) 
+  (local [(define (unary-ormap lst)
+            (cond [(empty? lst) false]
+                  [else (local [(define fn-rslt (fn (first lst)))]
+                          (cond [fn-rslt true]
+                                [else (unary-ormap (rest lst))]))]))
+          (define (full-ormap lst . rst)
+            (cond [(empty? lst) false]
+                  [else (local [(define fn-rslt (apply fn (cons (first lst)
+                                                                (map first rst))))]
+                          (cond [fn-rslt true]
+                                [else (apply full-ormap (cons (rest lst)
+                                                              (map rest rst)))]))]))]
+    (cond [(empty? rst) (unary-ormap lst)]
+          [else (apply full-ormap 
+                       (cons lst rst))])))
+
 (define (foldr fn bse lst . rst)
   (local [(define (unary-foldr lst)
             (cond [(empty? lst) bse]
@@ -138,6 +172,13 @@
         [(equal? elem (first lst))
          lst]
         [else (member elem (rest lst))]))
+
+(define (remove elem lst)
+  (cond [(empty? lst) empty]
+        [(equal? elem (first lst))
+         (rest lst)]
+        [else (cons (first lst)
+                    (remove elem (rest lst)))]))
 
 (define (remove* elems lst)
   (filter (lambda (x)
