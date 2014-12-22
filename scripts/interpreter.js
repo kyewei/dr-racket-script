@@ -11,7 +11,12 @@ var clearbutton;
 function Namespace(inheritedNamespace) { 
     function Namespace() {}; 
     Namespace.prototype = inheritedNamespace; 
-    return new Namespace(); 
+    var newNamespace = new Namespace();
+    
+    //should be obfuscated enough, since ids cannot have #'s anyways.
+    //__proto__ is not implemented in every browser, so this will do for now
+    newNamespace["#upperNamespace"] = inheritedNamespace; 
+    return newNamespace; 
 };
 var libraryNamespace = Namespace(null);
 var globalNamespace = Namespace(libraryNamespace);
@@ -26,7 +31,6 @@ Racket.SpecialForm = function () {
 Racket.Type = function() {
     this.eval = function() { return this; } ;
 };
-
 Racket.Num = function (value) { 
     this.type="Num";
     this.value=value; //JS floating point
@@ -86,28 +90,43 @@ Racket.Cell = function (left, right) {
             rest = rest.substring(5,rest.length-1);
         else if (rest ==="empty")
             rest = "";
+        //else // pair
+        //    rest = " . "+rest;
             
         return "\(list "+this.left.toString()+rest+"\)";
     }
-}
+};
 Racket.Struct = function () {
-}
-Racket.Lambda = function (ids, body, namespace) {
+};
+Racket.Function = function () { // Covers Lambda and Case-Lambda
+    this.type="Lambda";
+    this.toString = function() { return "\#\<procedure\>"; };
+};
+Racket.Lambda = function (ids, body, namespace) { 
     // ids is an Array of Strings that is declared in the sub-namespace
     // body is the Exp that will involve members of ids
     
-    this.type="Lambda";
-    
     this.name = "lambda";
-    this.minParamCount = ids.length;
-    this.hasRestArgument = false;
-    var restDot = ids.indexOf(".");
-    if (restDot!== -1 && restDot + 2 === ids.length) {
-        this.hasRestArgument = true;
-        this.minParamCount = restDot;       
-    }
     
-    this.ids=ids;
+    if (ids ==null || body ==null || namespace ==null)
+        return null;
+    
+    if (Array.isArray(ids)) {
+        this.minParamCount = ids.length;
+        this.hasRestArgument = false;
+        var restDot = ids.indexOf(".");
+        if (restDot!== -1 && restDot + 2 === ids.length) {
+            this.hasRestArgument = true;
+            this.minParamCount = restDot;   
+            this.restArg = ids[this.minParamCount+1];
+        }
+        this.ids=ids;
+    } else { //only rest argument
+        this.minParamCount = 0;
+        this.hasRestArgument = true;
+        this.ids = [];
+        this.restArg = ids;
+    }
     
     if (body.length> 1) {
         var tailBody = body[body.length-1];
@@ -117,17 +136,17 @@ Racket.Lambda = function (ids, body, namespace) {
     else 
         this.body = body[0];
     this.inheritedNamespace = namespace;
-    
     this.eval = function (syntaxStrTreeArg, namespace) {
         var lambdaNamespace = Namespace(this.inheritedNamespace);
-        if (syntaxStrTreeArg.length - 1 == this.minParamCount 
-        || (syntaxStrTreeArg.length - 1 >= this.minParamCount && this.hasRestArgument)) {
+        var paramCount = syntaxStrTreeArg.length -1;
+        if (paramCount == this.minParamCount 
+        || (paramCount >= this.minParamCount && this.hasRestArgument)) {
             for (var i=0; i< this.minParamCount; ++i) {
                 lambdaNamespace[this.ids[i]]=syntaxStrTreeArg[i+1];
             }
             if (this.hasRestArgument) {
                 var listMake = ["list"].concat(syntaxStrTreeArg.slice(this.minParamCount+1));
-                lambdaNamespace[this.ids[this.minParamCount+1]] = parseExpTree(listMake,lambdaNamespace);
+                lambdaNamespace[this.restArg] = parseExpTree(listMake,lambdaNamespace);
             }
             var result = parseExpTree(this.body, lambdaNamespace);
             if (result)
@@ -140,9 +159,47 @@ Racket.Lambda = function (ids, body, namespace) {
             outputlog("Function parameter count mismatch.");
             return null;
         }
-        
     };
-}
+};
+Racket.CaseLambda = function (body, namespace) { 
+    // body is an [[ids body], ...] where each element is a valid new Lambda(ids, body, namespace)
+    
+    this.name = "case-lambda";
+    
+    this.inheritedNamespace = namespace;
+    this.caseBody = body;
+    this.eval = function (syntaxStrTreeArg, namespace) {
+        var paramCount = syntaxStrTreeArg.length -1;
+        for (var i=0; i< this.caseBody.length; ++i) {
+            var minParamCount;
+            var hasRestArgument;
+            var restArg;
+            if (Array.isArray(this.caseBody[i][0])) { //list of ids
+                var restDot = this.caseBody[i][0].indexOf(".");
+                if (restDot!== -1 && restDot + 2 === this.caseBody[i][0].length) {
+                    hasRestArgument = true;
+                    minParamCount = restDot;
+                    restArg = this.caseBody[i][0][minParamCount+1];                    
+                } else {
+                    minParamCount = this.caseBody[i][0].length;
+                    hasRestArgument = false;
+                }
+            } else { // default to one rest-id
+                minParamCount = 0;
+                restArg = this.caseBody[i][0]
+                hasRestArgument = true;
+            }
+            if (paramCount == minParamCount 
+            || (paramCount >= minParamCount && hasRestArgument)) { //if arguments allowed fits number of arguments given
+                return (new Racket.Lambda(this.caseBody[i][0], this.caseBody[i].slice(1), this.inheritedNamespace)).eval(syntaxStrTreeArg, namespace);
+            } else {}; //skip to next case
+        }
+        
+        // Should not have gotten here if it was a well evaluated function
+        outputlog("Function parameter count mismatch."); 
+        return null;    
+    }; 
+};
 
 Racket.SpecialForm.prototype = new Racket.Exp();
 Racket.Type.prototype = new Racket.Exp();
@@ -151,7 +208,9 @@ Racket.Str.prototype = new Racket.Type();
 Racket.Bool.prototype = new Racket.Type();
 Racket.Sym.prototype = new Racket.Type();
 Racket.Char.prototype = new Racket.Type();
-Racket.Lambda.prototype = new Racket.Type();
+Racket.Function.prototype = new Racket.Type();
+Racket.Lambda.prototype = new Racket.Function();
+Racket.CaseLambda.prototype = new Racket.Function();
 Racket.List.prototype = new Racket.Type();
 Racket.Empty.prototype = new Racket.List();
 Racket.Cell.prototype = new Racket.List();
@@ -163,6 +222,7 @@ function populateSpecialForms() {
     keywords["true"] = new Racket.Bool(true);
     keywords["false"] = new Racket.Bool(false);
     keywords["empty"] = new Racket.Empty();
+    keywords["null"] = keywords["empty"];
     keywords["and"] = new Racket.SpecialForm();
     keywords["and"].eval = function(syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "and"
@@ -450,6 +510,44 @@ function populateSpecialForms() {
         var body = syntaxStrTree.slice(2);
         
         return new Racket.Lambda(ids, body, namespace);
+    }
+    keywords["λ"] = keywords["lambda"];
+    keywords["case-lambda"] = new Racket.SpecialForm();
+    keywords["case-lambda"].eval = function (syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "case-lambda"
+        // in the form of :
+        // (case-lambda [(id ...) ... final-exp)] ...)
+        
+        var caseBody = syntaxStrTree.slice(1);
+        
+        return new Racket.CaseLambda(caseBody, namespace);
+    }
+    keywords["set!"] = new Racket.SpecialForm();
+    keywords["set!"].eval = function (syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "set!"
+        // in the form of :
+        // (set! id exp)
+        
+        var id = syntaxStrTree[1];
+        var body = syntaxStrTree[2];
+        if (namespace[id] != null) { //if namespace has id, whether it is through inheritance or not
+            var setNamespace = namespace;
+            //while loop should be guaranteed to terminate since id exists somewhere
+            while(!setNamespace.hasOwnProperty(id)) //in upper levels, i.e. through inheritance
+                setNamespace = setNamespace["#upperNamespace"]; //go through inheritance;
+
+            //reached proper level since it exited loop, so namespace.hasOwnProperty(id) ===true
+            if (setNamespace["#upperNamespace"] ===null) {//reached library, disallow
+                outputlog("set! cannot mutate library id: "+id+".");
+                return null;
+            } else {
+                setNamespace[id] = parseExpTree(body, namespace);
+                return true; //no errors
+            }
+        } else { //should not have called set! at all
+            outputlog("id "+id+" not found, cannot be set!");
+            return null;
+        }
     }
     keywords["cond"] = new Racket.SpecialForm();
     keywords["cond"].eval = function (syntaxStrTree, namespace) {
@@ -753,6 +851,15 @@ function populateStandardFunctions(namespace) {
             }
         }
         return new Racket.Bool(equal);
+    }
+    namespace["quotient"] = new Racket.Lambda(["num1","num2"], new Racket.Exp(), namespace);
+    namespace["quotient"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length !== 3) {
+            outputlog("quotient requires exactly 2 arguments.");
+            return null;
+        }
+        var result = syntaxStrTreeArg[1].value/syntaxStrTreeArg[2].value;
+        return new Racket.Num(result>0? Math.floor(result): Math.ceil(result));
     }
     namespace["remainder"] = new Racket.Lambda(["num","mod"], new Racket.Exp(), namespace);
     namespace["remainder"].eval = function(syntaxStrTreeArg, namespace) {
@@ -1268,6 +1375,7 @@ function tokenize(input) {
         else 
             temp2 +=temp.charAt(i);
     }
+    //console.log(temp2);
     // Semicolon to account for comments
     var temp3 = temp2.split(/[\s\n]+|\;.*/g); 
     return temp3.filter( function(str){return str!="";} );
