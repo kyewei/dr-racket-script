@@ -1196,6 +1196,13 @@ function automaticIndent(e) {
     function trim(str) {// trim that removes whitespace but not newlines;
         return str.replace(/^[^\S\n]+|\s+$/g,'');
     }
+    
+    //Indent types
+    var cond_like = ["cond", "case-lambda"];
+    var lambda_like = ["lambda", "let", "let*", "letrec"];
+    var define_like = ["define", "local", "define-struct","λ"];
+    
+    
     if (e.keyCode === 13) {
         var caretSpot = doGetCaretPosition(textfield);
         //console.log(caretSpot);
@@ -1274,10 +1281,10 @@ function automaticIndent(e) {
                 if (keyword === "(" || keyword === "[") { //lambda
                     textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+1).join(" ") + trim(textfield.value.substring(caretSpot));
                     setCaretPosition(textfield, caretSpot + tokenizeInputIndexes[bracketIndex+1]+0);
-                } else if (["define", "local"].indexOf(keyword)!=-1) {
+                } else if (define_like.indexOf(keyword)!=-1) {
                     textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+2).join(" ") + trim(textfield.value.substring(caretSpot));
                     setCaretPosition(textfield, caretSpot + tokenizeInputIndexes[bracketIndex+1]+1);
-                } else if (["lambda", "let", "let*", "letrec"].indexOf(keyword)!=-1) {
+                } else if (lambda_like.indexOf(keyword)!=-1) {
                     if (inLineArguments) {
                         textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+2).join(" ") + trim(textfield.value.substring(caretSpot));
                         setCaretPosition(textfield, caretSpot + tokenizeInputIndexes[bracketIndex+1]+1);
@@ -1285,7 +1292,7 @@ function automaticIndent(e) {
                         textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[bracketIndex+1]+4).join(" ") + trim(textfield.value.substring(caretSpot));
                         setCaretPosition(textfield, caretSpot + tokenizeInputIndexes[bracketIndex+1]+3);
                     }
-                } else if (["cond"].indexOf(keyword)!=-1) {
+                } else if (cond_like.indexOf(keyword)!=-1) {
                     if (inLineArguments) {
                         textfield.value = textfield.value.substring(0,caretSpot) + Array(tokenizeInputIndexes[searchBackwards()]+1).join(" ") + trim(textfield.value.substring(caretSpot));
                         setCaretPosition(textfield, caretSpot + tokenizeInputIndexes[searchBackwards()]+0);
