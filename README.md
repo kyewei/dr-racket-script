@@ -12,12 +12,19 @@ The web page where the interpreter resides, specifically the evaluation textbox,
 Try it out [here](http://kyewei.github.io/dr-racket-script/)
 
 ###Implementation Details
-In order to create this, I had to use design patterns often found in functional programming.
+In order to create this, I had to use patterns often found in functional programming, such as the idea of eval-apply cycle and recursion on structures, 
+as well as various JavaScript language features such as its support of prototypical inheritance, accessing objects as associative arrays, and first-class functions and closures.
+
+To implement proper namespacing and nesting, I leveraged JavaScript's support of prototypical inheritance and its support of accessing objects as associative arrays.
+JavaScript's support for first-class functions and closures also helped me implement the various types and custom structures.
+The concept of eval-apply is employed in function evaluation.
+
+The actual parsing and evaluating of input consisted of the following steps.
 User entered code is first tokenized, removing comments and normalizing brackets.
-The project implements a recursive code parser that breaks code into blocks. 
-Blocks are then recursively parsed and evaluated by first translating them into Racket types, or looking up functions in a given namespace.
-Every object has an eval() that either returns itself, or in the case of a function or special form, returns the evaluated function result.
-Proper namespacing and nesting was implemented through using JavaScript's prototypical inheritance.
+Tokenized input is broken into blocks through the project's recursive code parser. 
+Blocks are then recursively parsed into native nested arrays (effectively treated as nodes with the first element as a parent and the rest as children), and translated into Racket types or functions through namespace lookup.
+While it is being converted into arrays, it is also being evaluated depth-first, effectively reducing the array to one final output when recursion is done. 
+Evaluation is done through every object having an eval() that accepts arguments, which either returns itself, or in the case of a function or special form, returns the evaluated function result.
 
 
 ###Supported Language Features
@@ -60,16 +67,17 @@ These are the currently implemented special forms:
     (define id bodyexp)
     (define (id args) ... bodyexp)
     (define-struct type-id (id ...))
-    (local [(define ...) ...] bodyexp)
-    (cond [predicate? bodyexp] ... [else bodyexp])
+    (local [(define ...) ...] ... bodyexp)
+    (cond [predicate? ... bodyexp] ... [else bodyexp])
     (if predicate true-bodyexp false-bodyexp)
     (lambda (args ...) ... bodyexp)
     (case-lambda [(args ...) ... bodyexp] ...)
     (or ...)
     (and ...)
-    (let ([id exp] ...) bodyexp)
-    (let* ([id exp] ...) bodyexp)
-    (letrec ([id exp] ...) bodyexp)
+    (let ([id exp] ...) ... bodyexp)
+    (let* ([id exp] ...) ... bodyexp)
+    (letrec ([id exp] ...) ... bodyexp)
+    (begin exp ... final-exp)
     (set! id exp)
     
 

@@ -8,7 +8,7 @@ var clearbutton;
 
 
 // This solves all my problems with JS's prototypical inheritance :D
-function Namespace(inheritedNamespace) { 
+function Namespace(inheritedNamespace, isTopLevel) { 
     function Namespace() {}; 
     Namespace.prototype = inheritedNamespace; 
     var newNamespace = new Namespace();
@@ -16,6 +16,7 @@ function Namespace(inheritedNamespace) {
     //should be obfuscated enough, since ids cannot have #'s anyways.
     //__proto__ is not implemented in every browser, so this will do for now
     newNamespace["#upperNamespace"] = inheritedNamespace; 
+    newNamespace["#isTopLevel"] = isTopLevel === true;
     return newNamespace; 
 };
 var libraryNamespace = Namespace(null);
@@ -131,7 +132,9 @@ Racket.Lambda = function (ids, body, namespace) {
     if (body.length> 1) {
         var tailBody = body[body.length-1];
         // since Lambda can accept multiple bodies, it is essentially a local/letrec type binding
-        this.body = ["local",body.slice(0,body.length-1),tailBody];
+        //CORRECTION: it is an implicit begin keyword wrapping the body
+        //this.body = ["local",body.slice(0,body.length-1),tailBody];
+        this.body = ["begin"].concat(body);
     }
     else 
         this.body = body[0];
@@ -375,7 +378,7 @@ function populateSpecialForms() {
     keywords["local"].eval = function (syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "local"
         // in the form of :
-        // (local [(define ...) ...)] body)
+        // (local [(define ...) ...)] ... body)
 
         var localNamespace = Namespace(namespace);
         // make id's first
@@ -384,7 +387,7 @@ function populateSpecialForms() {
         var defEval = syntaxStrTree[1].map(function(cur,i,arr) { return parseExpTree(cur,localNamespace); });
         var defSuccess = defEval.reduce(function(prev,cur,i,arr) { return prev && cur; }, true);
         if (defSuccess) {
-            var result = parseExpTree(syntaxStrTree[2],localNamespace);
+            var result = parseExpTree(["begin"].concat(syntaxStrTree.slice(2)),localNamespace);
             if (result) {
                 return result;
             } else {
@@ -400,7 +403,7 @@ function populateSpecialForms() {
     keywords["letrec"].eval = function (syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "local"
         // in the form of :
-        // (letrec ([id exp] [id exp] ...) body)
+        // (letrec ([id exp] [id exp] ...) ... body)
         
         if (!syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && Array.isArray(cur) && cur.length ===2 ; }, true)) {
             outputlog("letrec definitions not all id expression pairs");
@@ -415,7 +418,7 @@ function populateSpecialForms() {
         syntaxStrTree[1].map(function(cur,i,arr) { keywords["define"].eval(["define", cur[0], cur[1]],localNamespace); }); 
         var defSuccess = syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && localNamespace[cur[0]] instanceof Racket.Type; }, true);
         if (defSuccess) {
-            var result = parseExpTree(syntaxStrTree[2],localNamespace);
+            var result = parseExpTree(["begin"].concat(syntaxStrTree.slice(2)),localNamespace);
             if (result) {
                 return result;
             } else {
@@ -431,7 +434,7 @@ function populateSpecialForms() {
     keywords["let"].eval = function (syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "local"
         // in the form of :
-        // (let ([id exp] [id exp] ...) body)
+        // (let ([id exp] [id exp] ...) ... body)
         
         if (!syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && Array.isArray(cur) && cur.length ===2 ; }, true)) {
             outputlog("let definitions not all id expression pairs");
@@ -456,7 +459,7 @@ function populateSpecialForms() {
             }
         }
         if (defSuccess) {
-            var result = parseExpTree(syntaxStrTree[2],localNamespace);
+            var result = parseExpTree(["begin"].concat(syntaxStrTree.slice(2)),localNamespace);
             if (result) {
                 return result;
             } else {
@@ -472,7 +475,7 @@ function populateSpecialForms() {
     keywords["let*"].eval = function (syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "local"
         // in the form of :
-        // (let* ([id exp] [id exp] ...) body)
+        // (let* ([id exp] [id exp] ...) ... body)
         
         if (!syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && Array.isArray(cur) && cur.length ===2 ; }, true)) {
             outputlog("let* definitions not all id expression pairs");
@@ -488,7 +491,7 @@ function populateSpecialForms() {
             defSuccess = defSuccess && localNamespace[syntaxStrTree[1][i][0]] instanceof Racket.Type;
         }
         if (defSuccess) {
-            var result = parseExpTree(syntaxStrTree[2],localNamespace);
+            var result = parseExpTree(["begin"].concat(syntaxStrTree.slice(2)),localNamespace);
             if (result) {
                 return result;
             } else {
@@ -563,7 +566,7 @@ function populateSpecialForms() {
                 else {
                     var predicate = parseExpTree(syntaxStrTree[i][0], namespace);
                     if (predicate && predicate instanceof Racket.Bool && predicate.value) {
-                        return parseExpTree(syntaxStrTree[i][1], namespace);
+                        return parseExpTree(["begin"].concat(syntaxStrTree[i].slice(1)), namespace);
                     } //else {} //do nothing, go to next predicate
                 } 
             }
@@ -597,6 +600,20 @@ function populateSpecialForms() {
             outputlog("if is invalid or does not have 3 arguments.");
             return null;
         } 
+    }
+    keywords["begin"] = new Racket.SpecialForm();
+    keywords["begin"].eval = function (syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "begin"
+        // in the form of :
+        // (begin exp ... final-exp)
+        
+        var beginNamespace = (namespace["#isTopLevel"]?namespace:Namespace(namespace, true));
+        for (var i=1; i<syntaxStrTree.length; ++i) {
+            if (i !== syntaxStrTree.length-1) 
+                parseExpTree(syntaxStrTree[i], beginNamespace);
+            else
+                return parseExpTree(syntaxStrTree[i], beginNamespace);
+        }
     }
     return keywords;
 };
@@ -1198,7 +1215,7 @@ function automaticIndent(e) {
     }
     
     //Indent types
-    var cond_like = ["cond", "case-lambda"];
+    var cond_like = ["cond", "case-lambda", "begin"];
     var lambda_like = ["lambda", "let", "let*", "letrec"];
     var define_like = ["define", "local", "define-struct","λ"];
     
@@ -1350,7 +1367,7 @@ function loadCode(){
 }
 
 function tokenize(input) {
-    var temp = input.replace(/[\(\)\[\]]/g, function(a){return " "+a+" ";})
+    var temp = input.replace(/['\(\)\[\]]/g, function(a){return " "+a+" ";})
     //|(?=[\(\)\[\]])|(?<=[\(\)\[\]])
     // Why does JS not support positive look-behind? :(
     //console.log(temp);
@@ -1373,7 +1390,7 @@ function tokenize(input) {
                 return null;
             }
             var quoted = temp.substring(i, quoteEnd+1);
-            var unquoted = quoted.replace(/ [\(\)\[\]] /g, function(a){return a.charAt(1);});
+            var unquoted = quoted.replace(/ ['\(\)\[\]] /g, function(a){return a.charAt(1);});
             
             temp2 += unquoted;
             i = quoteEnd;
@@ -1384,7 +1401,7 @@ function tokenize(input) {
     }
     //console.log(temp2);
     // Semicolon to account for comments
-    var temp3 = temp2.split(/[\s\n]+|\;.*/g); 
+    var temp3 = temp2.split(/[\s\n]+|\;.*|\#\|[\s\S]*\|\#/g); 
     return temp3.filter( function(str){return str!="";} );
 };
 
@@ -1408,8 +1425,6 @@ function evaluate() {
             outputlog("Error occurred parsing or tokenizing code.");
             return null;
         }
-        //var output = syntaxStrTreeBlocks.map(printCode).reduce(function(prev,cur,i,arr) { return prev+(i>0?"\n":"")+cur; },"");
-        //console.log("\n"+output);
         
         if (checkbox.checked && readyForUser)
             outputfield.value = "";
@@ -1418,7 +1433,7 @@ function evaluate() {
         if (libraryLoadMode) {
             namespace = libraryNamespace;
         } else {
-            globalNamespace = Namespace(libraryNamespace);
+            globalNamespace = Namespace(libraryNamespace, true);
             namespace = globalNamespace;
         }
         
@@ -1496,8 +1511,8 @@ function parseStr(strArr) {
     //Recognize first level code blocks;
     var strCodeBlocks = recognizeBlock(strArr);
     
-    //console.log("Parsed String Code Blocks:" );
-    //console.log(strCodeBlocks);
+    console.log("Parsed String Code Blocks:" );
+    console.log(strCodeBlocks);
     
     //Recursively generate tree of code syntax
     var parsedStrCodeTree = new Array (strCodeBlocks.length);
@@ -1522,7 +1537,40 @@ function recognizeBlock(unparsedBlocks) {
     // unparsedBlocks gets shorter as it is consumed
     // experimented with scheme-style recursion where recursing element is used up
     while (unparsedBlocks.length > 0){
-        if (unparsedBlocks[0]==="(") {
+        if (unparsedBlocks[0]==="'") {
+            var firstNotSymbol;
+            for (var i=1; i<unparsedBlocks.length; ++i) {
+                if (unparsedBlocks[i] !== "'") {
+                    firstNotSymbol = i;
+                    i = unparsedBlocks.length; //exit loop  
+                }   
+            }
+            if (firstNotSymbol) {
+                if (unparsedBlocks[firstNotSymbol] === "(") {
+                    var bracketcount = 1;
+                    for (var i=firstNotSymbol+1; i<unparsedBlocks.length; ++i) {
+                        if (unparsedBlocks[i]==="(")
+                            bracketcount++;
+                        else if (unparsedBlocks[i]===")") {
+                            bracketcount--;
+                            if (bracketcount === 0) {
+                                var splicedblock = unparsedBlocks.slice(0,i+1);
+                                block.push(splicedblock);
+                                unparsedBlocks = unparsedBlocks.slice(i+1,unparsedBlocks.length);
+                                i = unparsedBlocks.length; //found end of block, exit loop
+                            }
+                        }
+                    }
+                } else {//singleton, not list
+                    var splicedblock = unparsedBlocks.slice(0,firstNotSymbol+1);
+                    block.push(splicedblock);
+                    unparsedBlocks = unparsedBlocks.slice(firstNotSymbol+1,unparsedBlocks.length);                     
+                }
+            } else { //should never be reached, since this means ' ends code
+                outputlog("Unfinished \'.");
+            }
+        }
+        else if (unparsedBlocks[0]==="(") {
             var bracketcount = 1;
             for (var i=1; i<unparsedBlocks.length; ++i) {
                 if (unparsedBlocks[i]==="(")
@@ -1541,7 +1589,7 @@ function recognizeBlock(unparsedBlocks) {
             console.log("Extra brackets");
             return null;
         } else {
-            block.push (unparsedBlocks[0])
+            block.push (unparsedBlocks[0]);
             unparsedBlocks = unparsedBlocks.slice(1);
         }
     }
