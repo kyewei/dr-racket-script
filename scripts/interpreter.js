@@ -387,7 +387,8 @@ function populateSpecialForms() {
         var defEval = syntaxStrTree[1].map(function(cur,i,arr) { return parseExpTree(cur,localNamespace); });
         var defSuccess = defEval.reduce(function(prev,cur,i,arr) { return prev && cur; }, true);
         if (defSuccess) {
-            var result = parseExpTree(["begin"].concat(syntaxStrTree.slice(2)),localNamespace);
+            var exp = syntaxStrTree.length>3?["begin"].concat(syntaxStrTree.slice(2)):syntaxStrTree[2];
+            var result = parseExpTree(exp,localNamespace);
             if (result) {
                 return result;
             } else {
@@ -418,7 +419,8 @@ function populateSpecialForms() {
         syntaxStrTree[1].map(function(cur,i,arr) { keywords["define"].eval(["define", cur[0], cur[1]],localNamespace); });
         var defSuccess = syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && localNamespace[cur[0]] instanceof Racket.Type; }, true);
         if (defSuccess) {
-            var result = parseExpTree(["begin"].concat(syntaxStrTree.slice(2)),localNamespace);
+            var exp = syntaxStrTree.length>3?["begin"].concat(syntaxStrTree.slice(2)):syntaxStrTree[2];
+            var result = parseExpTree(exp,localNamespace);
             if (result) {
                 return result;
             } else {
@@ -459,7 +461,8 @@ function populateSpecialForms() {
             }
         }
         if (defSuccess) {
-            var result = parseExpTree(["begin"].concat(syntaxStrTree.slice(2)),localNamespace);
+            var exp = syntaxStrTree.length>3?["begin"].concat(syntaxStrTree.slice(2)):syntaxStrTree[2];
+            var result = parseExpTree(exp,localNamespace);
             if (result) {
                 return result;
             } else {
@@ -491,7 +494,8 @@ function populateSpecialForms() {
             defSuccess = defSuccess && localNamespace[syntaxStrTree[1][i][0]] instanceof Racket.Type;
         }
         if (defSuccess) {
-            var result = parseExpTree(["begin"].concat(syntaxStrTree.slice(2)),localNamespace);
+            var exp = syntaxStrTree.length>3?["begin"].concat(syntaxStrTree.slice(2)):syntaxStrTree[2];
+            var result = parseExpTree(exp,localNamespace);
             if (result) {
                 return result;
             } else {
@@ -562,13 +566,27 @@ function populateSpecialForms() {
                 if (i === syntaxStrTree.length -1
                     && ((syntaxStrTree[i].length>=2 && syntaxStrTree[i][0] === "else")
                         || (syntaxStrTree[i].length===1))) {
-                    return parseExpTree((syntaxStrTree[i].length ===1? ["begin"].concat(syntaxStrTree[i]): ["begin"].concat(syntaxStrTree[i].slice(1))), namespace);
+                    if (syntaxStrTree[i][0] === "else") {
+                      if (syntaxStrTree[i].length ===2) {
+                        return parseExpTree(syntaxStrTree[i][1], namespace);
+                      } else
+                        return parseExpTree(["begin"].concat(syntaxStrTree[i].slice(1)), namespace);
+                    } else {
+                      if (syntaxStrTree[i].length ===1) {
+                        return parseExpTree(syntaxStrTree[i][0], namespace);
+                      } else
+                        return parseExpTree(["begin"].concat(syntaxStrTree[i]), namespace);
+                    }
+                    //return parseExpTree((syntaxStrTree[i].length ===1? ["begin"].concat(syntaxStrTree[i]): ["begin"].concat(syntaxStrTree[i].slice(1))), namespace);
                 }
                 else {
                     if (syntaxStrTree[i].length >= 2){
                       var predicate = parseExpTree(syntaxStrTree[i][0], namespace);
                       if (predicate && predicate instanceof Racket.Bool && predicate.value) {
-                        return parseExpTree(["begin"].concat(syntaxStrTree[i].slice(1)), namespace);
+                        if (syntaxStrTree[i].length>2)
+                          return parseExpTree(["begin"].concat(syntaxStrTree[i].slice(1)), namespace);
+                        else
+                          return parseExpTree(syntaxStrTree[i][1], namespace);
                       } //else {} //do nothing, go to next predicate
                     }
                 }
