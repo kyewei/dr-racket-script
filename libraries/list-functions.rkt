@@ -121,12 +121,12 @@
                      (first rst))]))
 
 (define (build-list num fn)
-  (local [(define (build-list/acc count fn)
-            (cond [(< count num) 
-                   (cons (fn count)
-                         (build-list/acc (+ 1 count) fn))]
-                  [else empty]))]
-    (build-list/acc 0 fn)))
+  (local [(define (build-list/acc count acc)
+            (cond [(< count 0) acc]
+                  [else (build-list/acc (sub1 count)
+                                        (cons (fn count)
+                                              acc))]))]
+    (build-list/acc (sub1 num) empty)))
 
 (define (reverse lst)
   (foldl cons empty lst))

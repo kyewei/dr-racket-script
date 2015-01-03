@@ -31,3 +31,7 @@
 
 (define (sqr num)
   (* num num))
+
+(define (sgn num)
+  (cond [(= num 0) 0]
+        [else (/ num (abs num))]))

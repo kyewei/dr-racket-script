@@ -341,8 +341,8 @@ function populateSpecialForms() {
         // i.e. if type is posn, this is (posn? posn-arg)
         namespace[typename+"?"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
         namespace[typename+"?"].eval = function(syntaxStrTreeArg, namespace) {
-            if (syntaxStrTreeArg.length !=2 || syntaxStrTreeArg[1].type !==syntaxStrTree[1]) {
-                outputlog(typename+"?"+" requires 1 "+typename+" argument.");
+            if (syntaxStrTreeArg.length !=2) {
+                outputlog(typename+"?"+" requires exactly 1 argument.");
                 return null;
             }
             return new Racket.Bool(syntaxStrTreeArg[1].type === typename);
@@ -382,7 +382,7 @@ function populateSpecialForms() {
 
         var localNamespace = Namespace(namespace);
         // make id's first
-        syntaxStrTree[1].map(function(cur,i,arr) { if (cur[0]==="define") {localNamespace[(Array.isArray(cur[1])?cur[1][0]:cur[1])]=null;} });
+        syntaxStrTree[1].map(function(cur,i,arr) { if (cur[0].substring(0,6)==="define") {localNamespace[(Array.isArray(cur[1])?cur[1][0]:cur[1])]=null;} });
         // THEN bind
         var defEval = syntaxStrTree[1].map(function(cur,i,arr) { return parseExpTree(cur,localNamespace); });
         var defSuccess = defEval.reduce(function(prev,cur,i,arr) { return prev && cur; }, true);
@@ -1401,9 +1401,12 @@ function tokenize(input) {
     //console.log(temp);
     var temp2 = "";
     var quoteEnabled = false;
+    var multilineCommentEnabled = false;
     for (var i=0; i< temp.length; ++i) {
         if (temp.charAt(i) === "\"")
             quoteEnabled = true;
+        else if (temp.substring(i,i+2) === "\#\|")
+            multilineCommentEnabled = true;
 
         if (quoteEnabled) {
             var quoteEnd = i;
@@ -1423,13 +1426,32 @@ function tokenize(input) {
             temp2 += unquoted;
             i = quoteEnd;
             quoteEnabled = false;
-        }
-        else
+        } else if (multilineCommentEnabled) {
+            var commentEnd = i;
+            var nestedComments = 1;
+            for (var j=i+1; j< temp.length; ++j) {
+                if (temp.substring(j,j+2) === "\#\|") {
+                    nestedComments++;
+                } else if (temp.substring(j,j+2) === "\|\#") {
+                    nestedComments--;
+                }
+                if (nestedComments === 0){
+                    commentEnd = j;
+                    j = temp.length
+                }
+            }
+            if (commentEnd === i || nestedComments >0) {
+              console.log("Mismatching nested comments when tokenizing.");
+              return null;
+            }
+            i = commentEnd+2;
+            multilineCommentEnabled = false;
+        } else
             temp2 +=temp.charAt(i);
     }
     //console.log(temp2);
     // Semicolon to account for comments
-    var temp3 = temp2.split(/[\s\n]+|\;.*|\#\|[\s\S]*\|\#/g);
+    var temp3 = temp2.split(/[\s\n]+|\;.*/g);
     return temp3.filter( function(str){return str!="";} );
 };
 
@@ -1768,7 +1790,7 @@ function parseExpTree (syntaxStrTree, namespace) {
                 evaluatedSyntaxStrTree[i] = parseExpTree(syntaxStrTree[i],namespace);
                 argEvalSuccess = argEvalSuccess && (evaluatedSyntaxStrTree[i] instanceof Racket.Type);
             }
-            // check if it was successful in producing Types
+            // check if it was successful in producing Racket.Types for the arguments
             if (argEvalSuccess) {
                 var result = lookupExp.eval(evaluatedSyntaxStrTree,namespace);
                 if (result) {
