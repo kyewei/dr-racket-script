@@ -2,7 +2,10 @@ var textfield;
 var submitbutton;
 var outputfield;
 var clearbutton;
-
+var fileupload;
+var filesubmit;
+var deletemenu;
+var deletebutton;
 
 // ---------- SCHEME TYPE DECLARATIONS AND SETUP ----------
 
@@ -17,10 +20,14 @@ function Namespace(inheritedNamespace, isTopLevel) {
     //__proto__ is not implemented in every browser, so this will do for now
     newNamespace["#upperNamespace"] = inheritedNamespace;
     newNamespace["#isTopLevel"] = isTopLevel === true;
+    newNamespace["#moduleNamespaces"] = {};
+    newNamespace["#thisModuleProvide"] = {}; //list of module provided id's
     return newNamespace;
 };
 var libraryNamespace = Namespace(null);
-var globalNamespace = Namespace(libraryNamespace);
+var globalNamespace = Namespace(libraryNamespace,true);
+var uploadedModulesRawText = {};
+var uploadedModulesParsed = {};
 
 var Racket = {};
 
@@ -91,8 +98,8 @@ Racket.Cell = function (left, right) {
             rest = rest.substring(5,rest.length-1);
         else if (rest ==="empty")
             rest = "";
-        //else // pair
-        //    rest = " . "+rest;
+        else // pair
+            rest = " . "+rest;
 
         return "\(list "+this.left.toString()+rest+"\)";
     }
@@ -319,6 +326,7 @@ function populateSpecialForms() {
             this.type = typename; //should be String
             this.propertyCount = propertyCount;
             this.propertyNames = propertyNames;
+            this.definestruct = true;
 
             // assert data.length === propertyCount;
             for (var i=0; i<this.propertyCount; ++i) {
@@ -326,7 +334,7 @@ function populateSpecialForms() {
             }
 
             this.toString = function () {
-                var str = "\(make-"+this.type;
+                var str = (this.definestruct?"\(make-":"\(")+this.type;
                 for (var i=0; i<propertyCount; ++i) {
                     str +=" ";
                     str += this[propertyNames[i]].toString();
@@ -357,6 +365,17 @@ function populateSpecialForms() {
             }
             return new Racket[typename](syntaxStrTreeArg.slice(1));
         };
+        //Clone without make prefix
+        namespace[typename] = new Racket.Lambda([".","rst"], new Racket.Exp(), namespace); //has propertyCount many arguments
+        namespace[typename].eval = function(syntaxStrTreeArg, namespace) {
+            if (syntaxStrTreeArg.length != propertyCount+1) {
+                outputlog(typename+" requires "+propertyCount+" argument(s).");
+                return null;
+            }
+            var obj = new Racket[typename](syntaxStrTreeArg.slice(1));
+            obj.definestruct = false; // so it prints (posn arg1 arg2) instead; implementation-wise, it is the same
+            return obj;
+        };
         // Make accessor methods
         // i.e. if type is posn, this makes (posn-x posn-arg), and (posn-y posn-arg)
         for (var i=0; i< propertyCount; ++i) {
@@ -374,6 +393,15 @@ function populateSpecialForms() {
         }
         return true; // for no errors
     };
+    keywords["struct"] = new Racket.SpecialForm();
+    keywords["struct"].eval = function(syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "struct"
+        // in the form of :
+        // (struct type-id (property1 property2 ...))
+
+        //This is an alternate to define-struct
+        return keywords["define-struct"].eval(syntaxStrTree, namespace);
+    }
     keywords["local"] = new Racket.SpecialForm();
     keywords["local"].eval = function (syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "local"
@@ -642,6 +670,96 @@ function populateSpecialForms() {
             else
                 return parseExpTree(syntaxStrTree[i], beginNamespace);
         }
+    }
+    keywords["require"] = new Racket.SpecialForm();
+    keywords["require"].eval = function (syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "require"
+        // in the form of :
+        // (require string ...)
+
+        // This evaluates the listed modules (which should be imported)
+        for (var i=1; i< syntaxStrTree.length; ++i){
+            //parse into Racket.String, this guarantees that the var is a string
+            var fileNameStr = parseExpTree(syntaxStrTree[i], namespace);
+            var fileName = fileNameStr.value; //get String's value, which is actual fileName
+
+            if (uploadedModulesParsed[fileName]){ //if above worked, this is not null
+
+                //Make a separate namespace for each module, evaluate, and put this inside the
+                //  give namespace under #moduleNamespaces
+                var moduleNamespace = Namespace(libraryNamespace, true);
+                var stepExp = uploadedModulesParsed[fileName];
+                while (stepExp.length > 0) {
+                    stepExp = parseStepExpBlocks(stepExp, moduleNamespace);
+                }
+
+                //check provide to make sure all provided id's are actually defined
+                var provideAll = true;
+                for (var id in moduleNamespace["#thisModuleProvide"]) {
+                    //since provides could be from current module or a required module, this checks down the dependency
+                    provideAll = provideAll && parseExpTree(id,moduleNamespace);
+                    if (!provideAll){
+                        outputlog("Not all listed provided id's are provided.")
+                        moduleNamespace = null;
+                        break;
+                    }
+                }
+
+                if (i === 1){ //first module to be imported
+                    // if its the first module, make the container #moduleProvide inside #moduleNamespaces
+                    namespace["#moduleNamespaces"]["#moduleProvide"] = {};
+                    for (id in moduleNamespace["#thisModuleProvide"]){
+                        namespace["#moduleNamespaces"]["#moduleProvide"][id] = {};
+                        namespace["#moduleNamespaces"]["#moduleProvide"][id].has = true;
+                        namespace["#moduleNamespaces"]["#moduleProvide"][id].sourceModule = fileName;
+                    }
+                } else { // not first, got to check if id is already in another imported module
+                    var noDuplicateProvides = true;
+                    for (id in moduleNamespace["#thisModuleProvide"]){
+                        if (namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(id)){
+                            noDuplicateProvides = false;
+                            break;
+                        }
+                    }
+                    if (noDuplicateProvides){
+                        for (id in moduleNamespace["#thisModuleProvide"]){
+                            namespace["#moduleNamespaces"]["#moduleProvide"][id] = {};
+                            namespace["#moduleNamespaces"]["#moduleProvide"][id].has = true;
+                            namespace["#moduleNamespaces"]["#moduleProvide"][id].sourceModule = fileName;
+                        }
+                    } else {
+                        outputlog("Imported modules with same provided id's.")
+                    }
+                }
+                namespace["#moduleNamespaces"][fileName] = moduleNamespace;
+            } else {
+                if (fileName){
+                    outputlog("Module "+ fileName +" not found.");
+                    return null;
+                } else {
+                    outputlog("require received argument(s) that were not all type String.")
+                    return null;
+                }
+
+            }
+        }
+        return true;
+    }
+    keywords["provide"] = new Racket.SpecialForm();
+    keywords["provide"].eval = function (syntaxStrTree, namespace) {
+        //assert syntaxStrTree[0] === "provide"
+        // in the form of :
+        // (provide id ...)
+
+        for (var i=1; i< syntaxStrTree.length; ++i){
+            if (typeof syntaxStrTree[i] == 'string' || syntaxStrTree[i] instanceof String){ //is id then
+                namespace["#thisModuleProvide"][syntaxStrTree[i]] = true;
+            } else {
+                outputlog("provide received argument(s) that were not id's.")
+                return null;
+            }
+        }
+        return true; //so it was successful
     }
     return keywords;
 };
@@ -1120,6 +1238,15 @@ function populateStandardFunctions(namespace) {
             return null;
         }
     }
+    namespace["pair?"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
+    namespace["pair?"].eval = function(syntaxStrTreeArg, namespace) {
+      if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Racket.List) {
+        return new Racket.Bool(syntaxStrTreeArg[1].type === "Cell");
+      } else {
+        outputlog("pair? was not called with 1 list.");
+        return null;
+      }
+    }
     namespace["list?"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
     namespace["list?"].eval = function(syntaxStrTreeArg, namespace) {
         if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Racket.Type) {
@@ -1194,9 +1321,25 @@ function prep() {
     submitbutton = document.getElementById("submit-button");
     checkbox = document.getElementById("auto-clear-checkbox");
     clearbutton = document.getElementById("clear-button");
+    fileupload = document.getElementById("file-upload");
+    filesubmit = document.getElementById("file-upload-submit");
+    deletemenu = document.getElementById("delete-module-menu");
+    deletebutton = document.getElementById("delete-button");
+    deletebutton.onclick = function() {
+        var filename = deletemenu.value;
+        if (uploadedModulesParsed[filename])
+            delete uploadedModulesParsed[filename];
+        if (uploadedModulesRawText[filename])
+            delete uploadedModulesRawText[filename];
+        deletemenu.remove(deletemenu.selectedIndex);
+    }
+    filesubmit.onclick = function(){};
     submitbutton.onclick=evaluate;
     textfield.onkeyup = automaticIndent;
     clearbutton.onclick = function () { outputfield.value = ""; };
+    // Setup upload functionality
+    setupModuleLoading();
+    
     outputlog("Please wait until ("+libraryFilesCount+") libraries are loaded.");
     loadCode();
 };
@@ -1387,12 +1530,41 @@ function loadCode(){
                     outputlog("All libraries loaded!");
                 }
             }
-        }
+        };
         httpReq.send();
     }
     requestFile("libraries/list-functions.rkt");
     requestFile("libraries/other-functions.rkt");
 }
+
+
+function setupModuleLoading(){ //HTML API for reading files into a string
+    filesubmit.onclick = function() {
+        if (fileupload.files && fileupload.files[0]){//exists when file is selected
+            var file = fileupload.files[0];
+            var reader = new FileReader();
+            reader.readAsText(file, "UTF-8");
+            reader.onload = function (e) {
+                uploadedModulesRawText[fileupload.files[0].name] = e.target.result;
+
+                //so only have to tokenize, parse once
+                var tokenized = tokenize(uploadedModulesRawText[fileupload.files[0].name]);
+                var parsedBlocks = parseStr(tokenized);
+
+                if (tokenized && parsedBlocks){
+                    uploadedModulesParsed[fileupload.files[0].name] = parsedBlocks;
+
+                    //Add option to delete to html drop-down list
+                    deletemenu.options.add(new Option(fileupload.files[0].name,fileupload.files[0].name));
+
+                    alert(fileupload.files[0].name+" uploaded and parsed successfully.");
+                } else
+                    alert(fileupload.files[0].name+" uploaded successfully, but could not be parsed.");
+            };
+        }
+    }
+}
+
 
 function tokenize(input) {
     var temp = input.replace(/['\(\)\[\]]/g, function(a){return " "+a+" ";})
@@ -1731,18 +1903,23 @@ function recursivelyBuildCodeTree(strBlock) {
 
 function parseStepExpBlocks (syntaxStrBlocks, namespace) {
     if (syntaxStrBlocks.length > 0) {
-        var exp = parseExpTree(syntaxStrBlocks[0], namespace);
 
+        var exp = parseExpTree(syntaxStrBlocks[0], namespace);
         if (exp) { // Expression is simplest form
             if (exp !== true)
                 outputlog(""+exp); //Print output to console
             return syntaxStrBlocks.slice(1); //return rest of blocks to parse
+        } else {
+            //#lang racket ignore
+            if (syntaxStrBlocks.length >= 2 && syntaxStrBlocks[0] === "#lang" && syntaxStrBlocks[1] === "racket")
+                return syntaxStrBlocks.slice(2);
         }
     }
 }
 
 function parseLookupType(expression,namespace) {
     //console.log("Tried parsing: "+ expression);
+    //console.log(namespace);
     if (expression instanceof Racket.Type)
         return expression;
     else if (expression[0]==="\"" && expression[expression.length-1]==="\"")
@@ -1758,9 +1935,14 @@ function parseLookupType(expression,namespace) {
     else if (specialForms[expression]) {
         //console.log("Looked up special form: "+  expression);
         return specialForms[expression];
+    } else if (namespace["#moduleNamespaces"]["#moduleProvide"] && namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(expression)) {
+        var moduleName = namespace["#moduleNamespaces"]["#moduleProvide"][expression].sourceModule;
+        return parseLookupType(expression,namespace["#moduleNamespaces"][moduleName]);
     } else if (namespace[expression]) {
         //console.log("Looked up: "+ expression +" in namespace: " + namespace);
         return namespace[expression];
+    } else if (expression === "#lang") { //#lang racket
+        return false;
     } else {
         outputlog("Unknown type: "+expression);
         return null;
