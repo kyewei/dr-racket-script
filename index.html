@@ -10,13 +10,13 @@
     </head>
     <body>
         <h2>Evaluator: </h2>
-        <textarea rows="10" 
-                  cols="100" 
+        <textarea rows="10"
+                  cols="100"
                   type="text"
                   inputmode="verbatim"
-                  autocomplete="off" 
-                  autocorrect="off" 
-                  autocapitalize="none" 
+                  autocomplete="off"
+                  autocorrect="off"
+                  autocapitalize="none"
                   spellcheck="false"
                   placeholder="Place your code here!"
                   id="code-field"
@@ -24,25 +24,41 @@
         <br>
         Note: evaluated code does not persist.
         <br>
-        <button type="button" 
+        <button type="button"
                 id="submit-button">Submit</button>
         <input type="checkbox"
                id="auto-clear-checkbox"
-               name="terms" 
+               name="terms"
                checked/>
                Auto-Clear Console Output
         <br>
         <br>
         <h4>Console Output:</h4>
-        <textarea rows="8" 
-                  cols="100" 
+        <textarea rows="8"
+                  cols="100"
                   placeholder="Output is empty!"
                   id="code-output"
                   readonly></textarea>
         <br>
-        <button type="button" 
+        <button type="button"
                 id="clear-button">Clear</button>
-                
+        <br>
+        <br>
+        <h4>Upload Singleton Modules (File is parsed but not evaluated until it is needed):</h4>
+        <input type="file"
+               id="file-upload">
+        <br>
+        <button type="button"
+                id="file-upload-submit">Upload</button>
+
+        <br>
+        <h4>Delete Uploaded Modules (This cannot be undone):</h4>
+        <select id="delete-module-menu">
+        </select>
+        <br>
+        <button type="button"
+                id="delete-button">Delete Module</button>
+
         <script src="scripts/interpreter.js">
         </script>
     </body>
