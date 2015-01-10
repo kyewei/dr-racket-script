@@ -21,6 +21,8 @@ function Namespace(inheritedNamespace, isTopLevel) {
     newNamespace["#upperNamespace"] = inheritedNamespace;
     newNamespace["#isTopLevel"] = isTopLevel === true;
     newNamespace["#moduleNamespaces"] = {};
+    // make the container #moduleProvide inside #moduleNamespaces
+    newNamespace["#moduleNamespaces"]["#moduleProvide"] = {};
     newNamespace["#thisModuleProvide"] = {}; //list of module provided id's
     return newNamespace;
 };
@@ -297,7 +299,10 @@ function populateSpecialForms() {
         }
 
         if (result) {
-            if (!(namespace.hasOwnProperty(id)) || namespace[id] === null) {
+            if (namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(id)) {
+                outputlog("Imported modules contain id: "+id+".");
+                return false;
+            } else if ((!(namespace.hasOwnProperty(id))) || namespace[id] === null) {
                 namespace[id] = result;
                 return true; //for no errors
             } else {
@@ -347,6 +352,10 @@ function populateSpecialForms() {
 
         // Make type-checker method
         // i.e. if type is posn, this is (posn? posn-arg)
+        if (namespace.hasOwnProperty(typename+"?") || namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(typename+"?")){
+          outputlog(typename+"?"+" already defined.");
+            return null;
+        }
         namespace[typename+"?"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
         namespace[typename+"?"].eval = function(syntaxStrTreeArg, namespace) {
             if (syntaxStrTreeArg.length !=2) {
@@ -357,6 +366,10 @@ function populateSpecialForms() {
         };
         // Make constructor method
         // i.e. if type is posn, this is (make-posn arg1 arg2)
+        if (namespace.hasOwnProperty("make-"+typename) || namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty("make-"+typename)){
+          outputlog("make-"+typename+" already defined.");
+          return null;
+        }
         namespace["make-"+typename] = new Racket.Lambda([".","rst"], new Racket.Exp(), namespace); //has propertyCount many arguments
         namespace["make-"+typename].eval = function(syntaxStrTreeArg, namespace) {
             if (syntaxStrTreeArg.length != propertyCount+1) {
@@ -366,6 +379,10 @@ function populateSpecialForms() {
             return new Racket[typename](syntaxStrTreeArg.slice(1));
         };
         //Clone without make prefix
+        if (namespace.hasOwnProperty(typename) || namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(typename)){
+          outputlog(typename+" already defined.");
+          return null;
+        }
         namespace[typename] = new Racket.Lambda([".","rst"], new Racket.Exp(), namespace); //has propertyCount many arguments
         namespace[typename].eval = function(syntaxStrTreeArg, namespace) {
             if (syntaxStrTreeArg.length != propertyCount+1) {
@@ -380,6 +397,10 @@ function populateSpecialForms() {
         // i.e. if type is posn, this makes (posn-x posn-arg), and (posn-y posn-arg)
         for (var i=0; i< propertyCount; ++i) {
             var id = propertyNames[i];
+            if (namespace.hasOwnProperty(typename+"-"+id) || namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(typename+"-"+id)){
+              outputlog(typename+"-"+id+" already defined.");
+              return null;
+            }
             namespace[typename+"-"+id] = new Racket.Lambda(["obj"], new Racket.Exp(), namespace);
             namespace[typename+"-"+id].id = propertyNames[i]; // needed to do this because this makes a deep copy
             namespace[typename+"-"+id].eval = function(syntaxStrTreeArg, namespace) {
@@ -565,12 +586,17 @@ function populateSpecialForms() {
 
         var id = syntaxStrTree[1];
         var body = syntaxStrTree[2];
-        if (namespace[id] != null) { //if namespace has id, whether it is through inheritance or not
+        if (parseExpTree(id,namespace)) { //if namespace has id, whether it is through inheritance, modules or not
             var setNamespace = namespace;
             //while loop should be guaranteed to terminate since id exists somewhere
-            while(!setNamespace.hasOwnProperty(id)) //in upper levels, i.e. through inheritance
-                setNamespace = setNamespace["#upperNamespace"]; //go through inheritance;
-
+            while((!setNamespace.hasOwnProperty(id))){ //in upper levels, i.e. through inheritance
+                if (!(setNamespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(id))){
+                    setNamespace = setNamespace["#upperNamespace"]; //go through inheritance;
+                } else { //found id in imported modules, do not edit
+                    outputlog("Found id: "+ id+ " in imported modules, cannot mutate.");
+                    return null;
+                }
+            }
             //reached proper level since it exited loop, so namespace.hasOwnProperty(id) ===true
             if (setNamespace["#upperNamespace"] ===null) {//reached library, disallow
                 outputlog("set! cannot mutate library id: "+id+".");
@@ -706,8 +732,7 @@ function populateSpecialForms() {
                 }
 
                 if (i === 1){ //first module to be imported
-                    // if its the first module, make the container #moduleProvide inside #moduleNamespaces
-                    namespace["#moduleNamespaces"]["#moduleProvide"] = {};
+
                     for (id in moduleNamespace["#thisModuleProvide"]){
                         namespace["#moduleNamespaces"]["#moduleProvide"][id] = {};
                         namespace["#moduleNamespaces"]["#moduleProvide"][id].has = true;
@@ -740,7 +765,6 @@ function populateSpecialForms() {
                     outputlog("require received argument(s) that were not all type String.")
                     return null;
                 }
-
             }
         }
         return true;
@@ -1339,7 +1363,7 @@ function prep() {
     clearbutton.onclick = function () { outputfield.value = ""; };
     // Setup upload functionality
     setupModuleLoading();
-    
+
     outputlog("Please wait until ("+libraryFilesCount+") libraries are loaded.");
     loadCode();
 };
