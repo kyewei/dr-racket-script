@@ -212,6 +212,27 @@ Racket.CaseLambda = function (body, namespace) {
         return null;
     };
 };
+Racket.Vector = function(valueArray, length) {
+    //assert valueArray.length === length
+
+    this.type="Vector";
+    this.arr = valueArray;
+    this.length = length;
+    this.toString = function(){
+        var str = "\(vector";
+        for (var i=0; i< this.length; ++i){
+            str += " "+this.arr[i].toString();
+        }
+        str+=")";
+        return str;
+    };
+    this.ith = function(i){
+        if (0 <= i && i<this.length)
+            return this.arr[i];
+        else
+            return null;
+    };
+};
 
 Racket.SpecialForm.prototype = new Racket.Exp();
 Racket.Type.prototype = new Racket.Exp();
@@ -227,6 +248,7 @@ Racket.List.prototype = new Racket.Type();
 Racket.Empty.prototype = new Racket.List();
 Racket.Cell.prototype = new Racket.List();
 Racket.Struct.prototype = new Racket.Type();
+Racket.Vector.prototype = new Racket.Type();
 
 
 function populateSpecialForms() {
@@ -1319,6 +1341,55 @@ function populateStandardFunctions(namespace) {
             return parseExpTree(arr, namespace);
         } else {
             outputlog("apply was called incorrectly");
+            return null;
+        }
+    }
+    namespace["vector"] = new Racket.Lambda([".","list-arg"], new Racket.Exp(), namespace);
+    namespace["vector"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length >= 1){
+            return new Racket.Vector(syntaxStrTreeArg.slice(1), syntaxStrTreeArg.length-1);
+        } else {
+            return null;
+        }
+    }
+    namespace["make-vector"] = new Racket.Lambda(["size",".","init"], new Racket.Exp(), namespace);
+    namespace["make-vector"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length >= 2 && syntaxStrTreeArg.length <= 3 && syntaxStrTreeArg[1].type==="Num"){
+            if (syntaxStrTreeArg[1].value <0){
+                outputlog("make-vector was called with size less than 0.");
+                return null;
+            }
+            var val = syntaxStrTreeArg[2] || new Racket.Num(0);
+            var array = [];
+            for (var i = 0; i < syntaxStrTreeArg[1].value; i++) {
+                array[i] = val;
+            }
+            return new Racket.Vector(array, syntaxStrTreeArg[1].value);
+        } else {
+            return null;
+        }
+    }
+    namespace["vector-length"] = new Racket.Lambda(["vec"], new Racket.Exp(), namespace);
+    namespace["vector-length"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1].type === "Vector"){
+            return new Racket.Num(syntaxStrTreeArg[1].length);
+        } else {
+            outputlog("vector-length was not called with 1 Vector.");
+            return null;
+        }
+    }
+    namespace["vector-ref"] = new Racket.Lambda(["vec","pos"], new Racket.Exp(), namespace);
+    namespace["vector-ref"].eval = function(syntaxStrTreeArg, namespace) {
+        console.log(syntaxStrTreeArg);
+        if (syntaxStrTreeArg.length === 3 && syntaxStrTreeArg[1].type === "Vector" && syntaxStrTreeArg[2].type === "Num"){
+            var index = syntaxStrTreeArg[2].value;
+            if (0<= index && index<syntaxStrTreeArg[1].length)
+                return syntaxStrTreeArg[1].ith(syntaxStrTreeArg[2].value);
+            else {
+                outputlog("vector-ref was called with index out of bounds.");
+            }
+        } else {
+            outputlog("vector-ref was not called with 1 Vector and 1 Num.");
             return null;
         }
     }
