@@ -262,36 +262,33 @@ function populateSpecialForms() {
         //assert syntaxStrTree[0] === "and"
         // in the form of :
         // (and exp exp ... exp)
-        var predicate = true;
 
-        for (var i=1; i< syntaxStrTree.length && predicate; ++i) {
+        for (var i=1; i< syntaxStrTree.length; ++i) {
             var exp = parseExpTree(syntaxStrTree[i], namespace);
-            if (exp.type === "Bool")
-                predicate = predicate && exp.value;
-            else {
-                outputlog("and evaluation result not Bool.");
-                return null;
+            if (exp && exp.type === "Bool" && !(exp.value)){ // not null and false boolean
+                return new Racket.Bool(false);
             }
+            if (i === syntaxStrTree.length-1) //return last exp if everything is truthy
+                return exp;
         }
-        return new Racket.Bool(predicate);
+        return new Racket.Bool(false); // empty and is false;
     };
     keywords["or"] = new Racket.SpecialForm();
     keywords["or"].eval = function(syntaxStrTree, namespace) {
         //assert syntaxStrTree[0] === "or"
         // in the form of :
         // (or exp exp ... exp)
-        var predicate = false;
 
-        for (var i=1; i< syntaxStrTree.length && !predicate; ++i) {
+        for (var i=1; i< syntaxStrTree.length; ++i) {
             var exp = parseExpTree(syntaxStrTree[i], namespace);
-            if (exp.type === "Bool")
-                predicate = predicate || exp.value;
+            if (exp && exp.type === "Bool" && !(exp.value)){ // not null and false boolean
+                continue;
+            }
             else {
-                outputlog("or evaluation result not Bool.");
-                return null;
+                return exp;
             }
         }
-        return new Racket.Bool(predicate);
+        return new Racket.Bool(false);
     };
     keywords["define"] = new Racket.SpecialForm();
     keywords["define"].eval = function(syntaxStrTree, namespace) {
@@ -637,33 +634,33 @@ function populateSpecialForms() {
         //assert syntaxStrTree[0] === "cond"
         // in the form of :
         // (cond (bool exp) (bool exp) ... (else exp))
+
         if (Array.isArray(syntaxStrTree)) {
             for (var i=1; i< syntaxStrTree.length; ++i) {
                 if (i === syntaxStrTree.length -1
                     && ((syntaxStrTree[i].length>=2 && syntaxStrTree[i][0] === "else")
-                        || (syntaxStrTree[i].length===1))) {
+                        || (syntaxStrTree[i].length===1))) { //handles when to add an implcit begin, but only when necessary
                     if (syntaxStrTree[i][0] === "else") {
-                      if (syntaxStrTree[i].length ===2) {
-                        return parseExpTree(syntaxStrTree[i][1], namespace);
-                      } else
-                        return parseExpTree(["begin"].concat(syntaxStrTree[i].slice(1)), namespace);
+                        if (syntaxStrTree[i].length ===2) {
+                            return parseExpTree(syntaxStrTree[i][1], namespace);
+                        } else
+                            return parseExpTree(["begin"].concat(syntaxStrTree[i].slice(1)), Namespace(namespace,true)); //gotta make it a new namespace
                     } else {
-                      if (syntaxStrTree[i].length ===1) {
-                        return parseExpTree(syntaxStrTree[i][0], namespace);
-                      } else
-                        return parseExpTree(["begin"].concat(syntaxStrTree[i]), namespace);
+                        if (syntaxStrTree[i].length ===1) {
+                            return parseExpTree(syntaxStrTree[i][0], namespace);
+                        } else
+                            return parseExpTree(["begin"].concat(syntaxStrTree[i]), Namespace(namespace,true)); //gotta make it a new namespace
                     }
                     //return parseExpTree((syntaxStrTree[i].length ===1? ["begin"].concat(syntaxStrTree[i]): ["begin"].concat(syntaxStrTree[i].slice(1))), namespace);
-                }
-                else {
+                } else {
                     if (syntaxStrTree[i].length >= 2){
-                      var predicate = parseExpTree(syntaxStrTree[i][0], namespace);
-                      if (predicate && predicate instanceof Racket.Bool && predicate.value) {
-                        if (syntaxStrTree[i].length>2)
-                          return parseExpTree(["begin"].concat(syntaxStrTree[i].slice(1)), namespace);
-                        else
-                          return parseExpTree(syntaxStrTree[i][1], namespace);
-                      } //else {} //do nothing, go to next predicate
+                        var predicate = parseExpTree(syntaxStrTree[i][0], namespace);
+                        if (predicate && !(predicate.type === "Bool" && !predicate.value)) { //if not null and not false Racket.Bool
+                            if (syntaxStrTree[i].length>2)
+                                return parseExpTree(["begin"].concat(syntaxStrTree[i].slice(1)), Namespace(namespace,true)); //gotta make it a new namespace
+                            else
+                                return parseExpTree(syntaxStrTree[i][1], namespace);
+                        } //else {} //do nothing, go to next predicate
                     }
                 }
             }
@@ -683,14 +680,14 @@ function populateSpecialForms() {
 
         if (Array.isArray(syntaxStrTree) && syntaxStrTree.length===4) {
             var predicate = parseExpTree(syntaxStrTree[1], namespace);
-            if (predicate && predicate.type==="Bool") {
-                if (predicate.value) {
+            if (predicate) { // if not null
+                if (!(predicate.type==="Bool" && !predicate.value)) { //if not false Racket.Bool
                     return parseExpTree(syntaxStrTree[2], namespace);
                 } else {
                     return parseExpTree(syntaxStrTree[3], namespace);
                 }
             } else {
-                outputlog("if predicate gave error or was not type Bool.")
+                outputlog("if predicate evaluation gave error.")
                 return null;
             }
         } else {
