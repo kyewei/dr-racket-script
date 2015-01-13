@@ -185,13 +185,8 @@ Racket.Lambda = function (ids, body, namespace) {
                 var listMake = ["list"].concat(syntaxStrTreeArg.slice(this.minParamCount+1));
                 lambdaNamespace[this.restArg] = new Racket.FunctionCall(listMake,lambdaNamespace).eval();
             }
-            var result = new Racket.FunctionCall(this.body, lambdaNamespace).eval();
-            if (result)
-                return result;
-            else {
-                outputlog("Lambda evaluation error.");
-                return null;
-            }
+            return new Racket.FunctionCall(this.body, lambdaNamespace);
+
         } else {
             outputlog("Function parameter count mismatch.");
             return null;
@@ -491,13 +486,8 @@ function populateSpecialForms() {
         var defSuccess = defEval.reduce(function(prev,cur,i,arr) { return prev && cur; }, true);
         if (defSuccess) {
             var exp = syntaxStrTree.length>3?["begin"].concat(syntaxStrTree.slice(2)):syntaxStrTree[2];
-            var result = new Racket.FunctionCall(exp,localNamespace).eval();
-            if (result) {
-                return result;
-            } else {
-                outputlog("local body evaluation failed.");
-                return null;
-            }
+            return new Racket.FunctionCall(exp,localNamespace);
+
         } else {
             outputlog("local definitions evaluation failed.");
             return null;
@@ -523,13 +513,8 @@ function populateSpecialForms() {
         var defSuccess = syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && localNamespace[cur[0]] instanceof Racket.Type; }, true);
         if (defSuccess) {
             var exp = syntaxStrTree.length>3?["begin"].concat(syntaxStrTree.slice(2)):syntaxStrTree[2];
-            var result = new Racket.FunctionCall(exp,localNamespace).eval();
-            if (result) {
-                return result;
-            } else {
-                outputlog("letrec body evaluation failed.");
-                return null;
-            }
+            return new Racket.FunctionCall(exp,localNamespace);
+
         } else {
             outputlog("letrec definitions evaluation failed.");
             return null;
@@ -565,13 +550,8 @@ function populateSpecialForms() {
         }
         if (defSuccess) {
             var exp = syntaxStrTree.length>3?["begin"].concat(syntaxStrTree.slice(2)):syntaxStrTree[2];
-            var result = new Racket.FunctionCall(exp,localNamespace).eval();
-            if (result) {
-                return result;
-            } else {
-                outputlog("let body evaluation failed.");
-                return null;
-            }
+            return new Racket.FunctionCall(exp,localNamespace);
+
         } else {
             outputlog("let definitions evaluation failed.");
             return null;
@@ -598,13 +578,8 @@ function populateSpecialForms() {
         }
         if (defSuccess) {
             var exp = syntaxStrTree.length>3?["begin"].concat(syntaxStrTree.slice(2)):syntaxStrTree[2];
-            var result = new Racket.FunctionCall(exp,localNamespace).eval();
-            if (result) {
-                return result;
-            } else {
-                outputlog("let* body evaluation failed.");
-                return null;
-            }
+            return new Racket.FunctionCall(exp,localNamespace);
+
         } else {
             outputlog("let* definitions evaluation failed.");
             return null;
@@ -1494,6 +1469,7 @@ function prep() {
 
 function outputlog(str) {
     outputfield.value += str+"\n";
+    //console.log("Logged: "+str);
 };
 
 function automaticIndent(e) {
@@ -2096,7 +2072,7 @@ function parseLookupType(expression,namespace) {
         return null;
     }
 }
-
+var aggressiveOptimization = true;
 function parseExpTree (syntaxStrTree, namespace) {
     do {
         // This will not loop forever, it exits when null is encountered
@@ -2110,42 +2086,78 @@ function parseExpTree (syntaxStrTree, namespace) {
 
             //evaluate function if lookup was successful
             if (lookupExp) {
-                if (lookupExp.type === "SpecialForm") {//if special form, do not evaluate arguments, instead, branch off
-                    return lookupExp.eval(syntaxStrTree, namespace);
-                } else if (lookupExp.type !== "Lambda") { // better be a function
+                var result;
+                var evalExp;
+                var evalNamespace;
+                if (lookupExp.type === "SpecialForm") {//if special form, do not evaluate arguments
+                    // Do nothing
+                    //result =  lookupExp.eval(syntaxStrTree, namespace);
+                    evalExp = syntaxStrTree;
+                    evalNamespace = namespace;
+                } else if (lookupExp.type === "Lambda"){
+                    // For functions:
+                    // evaluate the function call arguments first
+                    var evaluatedSyntaxStrTree = new Array(syntaxStrTree.length);
+                    evaluatedSyntaxStrTree[0] = syntaxStrTree[0];
+                    var argEvalSuccess = true;
+                    for (var i = 1; i< syntaxStrTree.length; ++i) {
+                        evaluatedSyntaxStrTree[i] = parseExpTree(syntaxStrTree[i],namespace);
+                        argEvalSuccess = argEvalSuccess && (evaluatedSyntaxStrTree[i] instanceof Racket.Type);
+                    }
+                    if (!argEvalSuccess){ // Check if it was successful in producing Racket.Types for the arguments
+                        outputlog(""+ syntaxStrTree[0]+ " function call arguments were not all Typed");
+                        //console.log(evaluatedSyntaxStrTree);
+                        return null;
+                    } else {
+                        evalExp = evaluatedSyntaxStrTree;
+                        evalNamespace = namespace;
+                        //result = lookupExp.eval(evaluatedSyntaxStrTree,namespace);
+                    }
+                } else if (lookupExp.type !== "Lambda") { // Should have been a function
                     outputlog(syntaxStrTree[0]+" is not a function.");
                     return null;
                 }
 
-                // evaluate the function call arguments first
-                var evaluatedSyntaxStrTree = new Array(syntaxStrTree.length);
-                evaluatedSyntaxStrTree[0] = syntaxStrTree[0];
-                var argEvalSuccess = true;
-                for (var i = 1; i< syntaxStrTree.length; ++i) {
-                    evaluatedSyntaxStrTree[i] = parseExpTree(syntaxStrTree[i],namespace);
-                    argEvalSuccess = argEvalSuccess && (evaluatedSyntaxStrTree[i] instanceof Racket.Type);
+                //Aggressive tail-call namespace optimization that I'm not certain is safe but will try anyways.
+                // This is on by default.
+                // This would help reduce nesting of namespaces by forcefully going to a parent namespace
+                var fnName = syntaxStrTree[0];
+                // If the function is accessed by id, (presumably meaning it is not a temporary lambda), then
+                // fnName would be a string (id) and tail recursion would occur
+                // Also, it cannot be a special form, so this checks for that too
+                if (aggressiveOptimization && (typeof fnName == 'string' /*|| fnName instanceof String*/) && !specialForms[fnName] /*&& !evalNamespace.hasOwnProperty(fnName)*/){
+                    //console.log(fnName);
+
+                    // Then proceeds to find the deepest namespace that has this as defined function that is identical
+                    // Also makes sure deepest namespace reached is not the library of functions namespace
+                    var searchNamespace = evalNamespace;
+
+                    var parentNamespace = searchNamespace["#upperNamespace"];
+                    while (parentNamespace[fnName] === lookupExp && parentNamespace !== libraryNamespace){
+                        searchNamespace = parentNamespace;
+                        parentNamespace = searchNamespace["#upperNamespace"];
+                    }
+                    evalNamespace = searchNamespace;
                 }
-                // check if it was successful in producing Racket.Types for the arguments
-                if (argEvalSuccess) {
-                    var result = lookupExp.eval(evaluatedSyntaxStrTree,namespace);
-                    if (result) {
-                        if (result.type === "FunctionCall"){
-                            var exps = result.exp;
-                            var nmsp = result.namespace;
-                            syntaxStrTree = exps;
-                            namespace = nmsp;
-                            continue;
-                        }
-                        else {
-                            // Not FunctionCall (tail-recursion) object? Must mean regular Racket.Type is the result
-                            return result;
-                        }
-                    } else {
-                        outputlog("Function "+syntaxStrTree[0]+" evaluation returned error");
-                        return null;
+
+                // Evaluate function/special form call
+                result =  lookupExp.eval(evalExp, evalNamespace);
+
+                if (result) {
+                    if (result.type === "FunctionCall"){
+                        var exps = result.exp;
+                        var nmsp = result.namespace;
+
+                        syntaxStrTree = exps;
+                        namespace = nmsp;
+                        continue;
+                    }
+                    else {
+                        // Not FunctionCall (tail-recursion) object? Must mean regular Racket.Type is the result
+                        return result;
                     }
                 } else {
-                    outputlog(""+ syntaxStrTree[0]+ " function call arguments were not all Typed");
+                    outputlog("Special form "+syntaxStrTree[0]+" evaluation returned error");
                     return null;
                 }
             } else {
