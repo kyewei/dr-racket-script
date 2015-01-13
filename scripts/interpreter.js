@@ -89,6 +89,7 @@ Racket.Empty = function () {
     this.toString = function () {
         return "empty";
     };
+    this.length = function() { return 0; };
 };
 Racket.Cell = function (left, right) {
     this.type="Cell";
@@ -115,6 +116,19 @@ Racket.Cell = function (left, right) {
         } while(true); // It will break if it reaches empty (base case) or non-cell
 
         return returnStr+")";
+    };
+    this.length = function() {
+        var currentCell = this;
+        var count = 0;
+        while (currentCell.type === "Cell"){
+            count++;
+            currentCell = currentCell.right;
+        }
+        if (currentCell.type === "Empty"){ //proper list ending in Racket.Empty;
+            return count;
+        } else { // improper list huh.
+            return null;
+        }
     };
 };
 Racket.Struct = function () {
@@ -169,9 +183,9 @@ Racket.Lambda = function (ids, body, namespace) {
             }
             if (this.hasRestArgument) {
                 var listMake = ["list"].concat(syntaxStrTreeArg.slice(this.minParamCount+1));
-                lambdaNamespace[this.restArg] = parseExpTree(listMake,lambdaNamespace);
+                lambdaNamespace[this.restArg] = new Racket.FunctionCall(listMake,lambdaNamespace).eval();
             }
-            var result = parseExpTree(this.body, lambdaNamespace);
+            var result = new Racket.FunctionCall(this.body, lambdaNamespace).eval();
             if (result)
                 return result;
             else {
@@ -672,7 +686,6 @@ function populateSpecialForms() {
                         } else
                             return new Racket.FunctionCall(["begin"].concat(syntaxStrTree[i]), Namespace(namespace,true)); //gotta make it a new namespace
                     }
-                    //return parseExpTree((syntaxStrTree[i].length ===1? ["begin"].concat(syntaxStrTree[i]): ["begin"].concat(syntaxStrTree[i].slice(1))), namespace);
                 } else {
                     if (syntaxStrTree[i].length >= 2){
                         var predicate = new Racket.FunctionCall(syntaxStrTree[i][0], namespace).eval();
@@ -1336,6 +1349,21 @@ function populateStandardFunctions(namespace) {
         }
         return cons;
     }
+    namespace["length"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
+    namespace["length"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Racket.List) {
+            var len = syntaxStrTreeArg[1].length();
+            if (len !== null)
+                return new Racket.Num(len);
+            else {
+                outputlog("length received an invalid list.");
+                return null;
+            }
+        } else {
+            outputlog("length did not receive 1 list.");
+            return null;
+        }
+    }
     namespace["identity"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
     namespace["identity"].eval = function(syntaxStrTreeArg, namespace) {
         return syntaxStrTreeArg[1];
@@ -1344,9 +1372,16 @@ function populateStandardFunctions(namespace) {
     namespace["apply"].eval = function(syntaxStrTreeArg, namespace) {
         if (syntaxStrTreeArg.length === 3 && new Racket.FunctionCall(["list?", syntaxStrTreeArg[2]],namespace).eval().value === true) {
             var arr;
-            if (namespace["length"])
-                arr = new Array(new Racket.FunctionCall(["length", syntaxStrTreeArg[2]],namespace).eval().value + 1); // gets length of cons list using function length;
-            else
+            var len;
+            if (syntaxStrTreeArg[2] instanceof Racket.List) {
+                len = syntaxStrTreeArg[2].length();
+                if (len !== null)
+                    arr = new Array(len + 1); // gets length of cons list using function length;
+                else {
+                    outputlog("apply received an invalid list.");
+                    return null;
+                }
+            } else
                 arr = [];
             arr[0]=syntaxStrTreeArg[1];
             var count = 1;

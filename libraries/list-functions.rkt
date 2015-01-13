@@ -5,13 +5,6 @@
                (filter fn (rest lst)))]
         [else (filter fn (rest lst))]))
 
-(define (length lst)
-  (local [(define (length/acc lst acc)
-            (cond [(empty? lst) acc]
-                  [else (length/acc (rest lst)
-                                    (+ 1 acc))]))]
-    (length/acc lst 0)))
-
 (define (map fn lst . rst) 
   (local [(define (unary-map fn lst)
             (cond [(empty? lst) empty]
