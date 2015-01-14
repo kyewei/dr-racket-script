@@ -20,14 +20,25 @@ function Namespace(inheritedNamespace, isTopLevel) {
     //__proto__ is not implemented in every browser, so this will do for now
     newNamespace["#upperNamespace"] = inheritedNamespace;
     newNamespace["#isTopLevel"] = isTopLevel === true;
-    newNamespace["#moduleNamespaces"] = {};
+    // newNamespace["#moduleNamespaces"] is not defined here since it will overwrite, and I do not want overwrite
+    // Rather, I want the prototypical nature of namespaces to provide lookup to parent namespace's ["#moduleNamespaces"]
+
+    /*if (inheritedNamespace === libraryNamespace) {
+        newNamespace["#moduleNamespaces"] = {};
+        newNamespace["#moduleNamespaces"]["#moduleProvide"] = {};
+    }*/
+
     // make the container #moduleProvide inside #moduleNamespaces
-    newNamespace["#moduleNamespaces"]["#moduleProvide"] = {};
     newNamespace["#thisModuleProvide"] = {}; //list of module provided id's
     return newNamespace;
 };
 var libraryNamespace = Namespace(null);
+libraryNamespace["#moduleNamespaces"] = {};
+libraryNamespace["#moduleNamespaces"]["#moduleProvide"] = {};
 var globalNamespace = Namespace(libraryNamespace,true);
+globalNamespace["#moduleNamespaces"] = {}; // Make containers only in globalNamespace
+globalNamespace["#moduleNamespaces"]["#moduleProvide"] = {};
+
 var uploadedModulesRawText = {};
 var uploadedModulesParsed = {};
 
@@ -399,10 +410,16 @@ function populateSpecialForms() {
         };
         Racket[typename].prototype = new Racket.Type();
 
+        function checkNamespace(id,namespace){ // Made a general function instead to process namespace id-already-defined checks
+            //has to allow null though since some things may make id before binding
+            return (namespace.hasOwnProperty(id) && namespace[id] !== null)
+                || (namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(id) && namespace["#moduleNamespaces"]["#moduleProvide"][id] !== null);
+        }
+
         // Make type-checker method
         // i.e. if type is posn, this is (posn? posn-arg)
-        if (namespace.hasOwnProperty(typename+"?") || namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(typename+"?")){
-          outputlog(typename+"?"+" already defined.");
+        if (checkNamespace(typename+"?",namespace)){
+            outputlog(typename+"?"+" already defined.");
             return null;
         }
         namespace[typename+"?"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
@@ -415,9 +432,9 @@ function populateSpecialForms() {
         };
         // Make constructor method
         // i.e. if type is posn, this is (make-posn arg1 arg2)
-        if (namespace.hasOwnProperty("make-"+typename) || namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty("make-"+typename)){
-          outputlog("make-"+typename+" already defined.");
-          return null;
+        if (checkNamespace("make-"+typename,namespace)){
+            outputlog("make-"+typename+" already defined.");
+            return null;
         }
         namespace["make-"+typename] = new Racket.Lambda([".","rst"], new Racket.Exp(), namespace); //has propertyCount many arguments
         namespace["make-"+typename].eval = function(syntaxStrTreeArg, namespace) {
@@ -428,9 +445,9 @@ function populateSpecialForms() {
             return new Racket[typename](syntaxStrTreeArg.slice(1));
         };
         //Clone without make prefix
-        if (namespace.hasOwnProperty(typename) || namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(typename)){
-          outputlog(typename+" already defined.");
-          return null;
+        if (checkNamespace(typename,namespace)){
+            outputlog(typename+" already defined.");
+            return null;
         }
         namespace[typename] = new Racket.Lambda([".","rst"], new Racket.Exp(), namespace); //has propertyCount many arguments
         namespace[typename].eval = function(syntaxStrTreeArg, namespace) {
@@ -446,9 +463,9 @@ function populateSpecialForms() {
         // i.e. if type is posn, this makes (posn-x posn-arg), and (posn-y posn-arg)
         for (var i=0; i< propertyCount; ++i) {
             var id = propertyNames[i];
-            if (namespace.hasOwnProperty(typename+"-"+id) || namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(typename+"-"+id)){
-              outputlog(typename+"-"+id+" already defined.");
-              return null;
+            if (checkNamespace(typename+"-"+id,namespace)){
+                outputlog(typename+"-"+id+" already defined.");
+                return null;
             }
             namespace[typename+"-"+id] = new Racket.Lambda(["obj"], new Racket.Exp(), namespace);
             namespace[typename+"-"+id].id = propertyNames[i]; // needed to do this because this makes a deep copy
@@ -746,6 +763,11 @@ function populateSpecialForms() {
                 while (stepExp.length > 0) {
                     stepExp = parseStepExpBlocks(stepExp, moduleNamespace);
                 }
+
+                // Make these containers every time new globalNamespace is made.
+                // This is a module globalNamespace
+                moduleNamespace["#moduleNamespaces"] = {};
+                moduleNamespace["#moduleNamespaces"]["#moduleProvide"] = {};
 
                 //check provide to make sure all provided id's are actually defined
                 var provideAll = true;
@@ -1681,6 +1703,13 @@ function setupModuleLoading(){ //HTML API for reading files into a string
                     //Add option to delete to html drop-down list
                     deletemenu.options.add(new Option(fileupload.files[0].name,fileupload.files[0].name));
 
+                    //But also make sure no duplicate names exist
+                    for (var i = 0; i< deletemenu.options.length; ++i){
+                        if (deletemenu.options[0].text === fileupload.files[0].name) {
+                            deletemenu.remove(deletemenu.selectedIndex);
+                        }
+                    }
+
                     alert(fileupload.files[0].name+" uploaded and parsed successfully.");
                 } else
                     alert(fileupload.files[0].name+" uploaded successfully, but could not be parsed.");
@@ -1780,6 +1809,8 @@ function evaluate() {
             namespace = libraryNamespace;
         } else {
             globalNamespace = Namespace(libraryNamespace, true);
+            globalNamespace["#moduleNamespaces"] = {}; // Make containers only in globalNamespace
+            globalNamespace["#moduleNamespaces"]["#moduleProvide"] = {};
             namespace = globalNamespace;
         }
 
