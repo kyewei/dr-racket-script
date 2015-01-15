@@ -30,38 +30,37 @@ Evaluation is done through every object having an eval() that accepts arguments,
 ###Supported Language Features
 * Namespacing (for local, define, functions, etc)
 ```
-  (local [(define x 5)]
-    (local [(define x 6)]
-      x)) -> 6
+(local [(define x 5)]
+  (local [(define x 6)] x)) -> 6
 ```
 * Lambda functions
 ```
-  ((lambda (x) (* x x)) 5) -> 25
+((lambda (x) (* x x)) 5) -> 25
 ```
 * Lists
 ```
-  (append (cons 1 (cons 2 empty))
-          (list 3 4 5)
-          (list 6)) -> (list 1 2 3 4 5 6)
+(append (cons 1 (cons 2 empty))
+        (list 3 4 5)
+        (list 6)) -> (list 1 2 3 4 5 6)
 ```
 * Higher-order functions
 ```
-  (foldr + 0 (build-list 100 add1)) -> 5050
+(foldr + 0 (build-list 100 add1)) -> 5050
 ```
 * Rest arguments
 ```
-  (define (mystery arg1 . rest-arg)
-    (cons (add1 arg1) rest-arg))
-  (mystery 100 1 2 3 4 5) -> (list 101 1 2 3 4 5)
+(define (mystery arg1 . rest-arg)
+  (cons (add1 arg1) rest-arg))
+(mystery 100 1 2 3 4 5) -> (list 101 1 2 3 4 5)
 ```
 * Structures (`define-struct`/`struct` and `make-posn`/`posn` (in this case) can be interchanged)
 ```
-  (define-struct posn (x y z))
-  (define triangle (make-posn 3 4 5))
-  (posn? triangle) -> #t
-  (posn-x triangle) -> 3
-  (posn-y triangle) -> 4
-  (posn-z triangle) -> 5
+(define-struct posn (x y z))
+(define triangle (make-posn 3 4 5))
+(posn? triangle) -> #t
+(posn-x triangle) -> 3
+(posn-y triangle) -> 4
+(posn-z triangle) -> 5
 ```
 * Simple module provide/require and uploading (current only supports single files)
 
@@ -82,7 +81,24 @@ Evaluation is done through every object having an eval() that accepts arguments,
   x -> 5
   y -> 10
   ```
+* Basic support for tail-recursion (things just get slower instead)
+```
+(define (sum1 n) ;; Not tail recursive
+  (if (>= 0 n)
+      0
+      (+ n (sum1 (sub1 n)))))
+(sum1 5000) -> 12502500
+(sum1 10000) -> "Maximum call stack size exceeded" in Chrome JavaScript console
 
+(define (sum2 acc n) ;; Tail recursive
+  (if (>= 0 n)
+      acc
+      (sum2 (+ acc n)
+            (sub1 n))))
+(sum2 0 5000) -> 12502500
+(sum2 0 10000) -> 50005000
+(sum2 0 500000) -> 125000250000 ;; Finishes after some time...
+```
 
 ###Special Forms
 These are the currently implemented special forms:
@@ -103,7 +119,7 @@ These are the currently implemented special forms:
     (letrec ([id exp] ...) ... bodyexp)
     (begin exp ... final-exp)
     (set! id exp)
-    (require Racket.String ...)
+    (require filename-string ...)
     (provide id ...)
 
 
@@ -142,6 +158,6 @@ I will be adding features as I learn more of the language. These may include:
 * More functions
 
 ####Remark:
-Beware of deep stacks caused by recursion.
+Beware of deep stacks caused by recursion (by that I mean non-tail-recursion).
 Since most JS engines don't have tail call optimizations, deep recursion can give stack errors.
 Also, it's surprising how much work a person can get done during finals week...

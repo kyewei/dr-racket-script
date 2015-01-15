@@ -359,7 +359,7 @@ function populateSpecialForms() {
         }
 
         if (result) {
-            if (namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(id)) {
+            if (namespace["#upperNamespace"] === libraryNamespace && namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(id)) {
                 outputlog("Imported modules contain id: "+id+".");
                 return false;
             } else if ((!(namespace.hasOwnProperty(id))) || namespace[id] === null) {
@@ -1700,15 +1700,15 @@ function setupModuleLoading(){ //HTML API for reading files into a string
                 if (tokenized && parsedBlocks){
                     uploadedModulesParsed[fileupload.files[0].name] = parsedBlocks;
 
-                    //Add option to delete to html drop-down list
-                    deletemenu.options.add(new Option(fileupload.files[0].name,fileupload.files[0].name));
-
                     //But also make sure no duplicate names exist
                     for (var i = 0; i< deletemenu.options.length; ++i){
                         if (deletemenu.options[0].text === fileupload.files[0].name) {
-                            deletemenu.remove(deletemenu.selectedIndex);
+                            deletemenu.remove(i);
                         }
                     }
+
+                    //Add option to delete to html drop-down list
+                    deletemenu.options.add(new Option(fileupload.files[0].name,fileupload.files[0].name));
 
                     alert(fileupload.files[0].name+" uploaded and parsed successfully.");
                 } else
@@ -2090,12 +2090,12 @@ function parseLookupType(expression,namespace) {
     else if (specialForms[expression]) {
         //console.log("Looked up special form: "+  expression);
         return specialForms[expression];
-    } else if (namespace["#moduleNamespaces"]["#moduleProvide"] && namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(expression)) {
-        var moduleName = namespace["#moduleNamespaces"]["#moduleProvide"][expression].sourceModule;
-        return parseLookupType(expression,namespace["#moduleNamespaces"][moduleName]);
     } else if (namespace[expression]) {
         //console.log("Looked up: "+ expression +" in namespace: " + namespace);
         return namespace[expression];
+    } else if (namespace["#moduleNamespaces"]["#moduleProvide"] && namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(expression)) {
+        var moduleName = namespace["#moduleNamespaces"]["#moduleProvide"][expression].sourceModule;
+        return parseLookupType(expression,namespace["#moduleNamespaces"][moduleName]);
     } else if (expression === "#lang") { //#lang racket
         return false;
     } else {
