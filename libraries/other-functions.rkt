@@ -35,3 +35,10 @@
 (define (sgn num)
   (cond [(= num 0) 0]
         [else (/ num (abs num))]))
+
+(define (xor b1 b2)
+  (cond [(and b1 (not b2))
+         b1]
+        [(and b2 (not b1))
+         b2]
+        [else false]))

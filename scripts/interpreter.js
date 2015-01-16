@@ -1159,6 +1159,74 @@ function populateStandardFunctions(namespace) {
         }
         return new Racket.Bool(equal);
     }
+    namespace["string<=?"] = new Racket.Lambda(["str1","str2",".","rst"], new Racket.Exp(), namespace);
+    namespace["string<=?"].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length <= 2) {
+            outputlog("string<=? requires at least 2 arguments.");
+            return null;
+        }
+        for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
+            if (syntaxStrTreeArg[i].type === "Str")
+                equal = equal && (syntaxStrTreeArg[i].value <= syntaxStrTreeArg[i+1].value);
+            else {
+                outputlog("Not all arguments were Str Type");
+                return null;
+            }
+        }
+        return new Racket.Bool(equal);
+    }
+    namespace["string<?"] = new Racket.Lambda(["str1","str2",".","rst"], new Racket.Exp(), namespace);
+    namespace["string<?"].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length <= 2) {
+            outputlog("string<? requires at least 2 arguments.");
+            return null;
+        }
+        for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
+            if (syntaxStrTreeArg[i].type === "Str")
+                equal = equal && (syntaxStrTreeArg[i].value < syntaxStrTreeArg[i+1].value);
+            else {
+                outputlog("Not all arguments were Str Type");
+                return null;
+            }
+        }
+        return new Racket.Bool(equal);
+    }
+    namespace["string>?"] = new Racket.Lambda(["str1","str2",".","rst"], new Racket.Exp(), namespace);
+    namespace["string>?"].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length <= 2) {
+            outputlog("string>? requires at least 2 arguments.");
+            return null;
+        }
+        for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
+            if (syntaxStrTreeArg[i].type === "Str")
+                equal = equal && (syntaxStrTreeArg[i].value > syntaxStrTreeArg[i+1].value);
+            else {
+                outputlog("Not all arguments were Str Type");
+                return null;
+            }
+        }
+        return new Racket.Bool(equal);
+    }
+    namespace["string>=?"] = new Racket.Lambda(["str1","str2",".","rst"], new Racket.Exp(), namespace);
+    namespace["string>=?"].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length <= 2) {
+            outputlog("string>=? requires at least 2 arguments.");
+            return null;
+        }
+        for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
+            if (syntaxStrTreeArg[i].type === "Str")
+                equal = equal && (syntaxStrTreeArg[i].value >= syntaxStrTreeArg[i+1].value);
+            else {
+                outputlog("Not all arguments were Str Type");
+                return null;
+            }
+        }
+        return new Racket.Bool(equal);
+    }
     namespace["substring"] = new Racket.Lambda(["str","start",".","end"], new Racket.Exp(), namespace);
     namespace["substring"].eval = function(syntaxStrTreeArg, namespace) {
         if (syntaxStrTreeArg.length <= 2 && syntaxStrTreeArg[1].type !== "Str") {
@@ -1260,10 +1328,10 @@ function populateStandardFunctions(namespace) {
     }
     namespace["not"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
     namespace["not"].eval = function(syntaxStrTreeArg, namespace) {
-        if (syntaxStrTreeArg.length == 2 && syntaxStrTreeArg[1].type === "Bool") {
-            return new Racket.Bool(!syntaxStrTreeArg[1].value);
+        if (syntaxStrTreeArg.length == 2) {
+            return new Racket.Bool(syntaxStrTreeArg[1].type === "Bool" && !syntaxStrTreeArg[1].value);
         } else {
-            outputlog("not did not receive 1 Bool.");
+            outputlog("not did not receive 1 argument.");
             return null;
         }
     }
