@@ -359,7 +359,7 @@ function populateSpecialForms() {
         }
 
         if (result) {
-            if (namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(id)) {
+            if (namespace["#upperNamespace"] === libraryNamespace && namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(id)) {
                 outputlog("Imported modules contain id: "+id+".");
                 return false;
             } else if ((!(namespace.hasOwnProperty(id))) || namespace[id] === null) {
@@ -1159,6 +1159,74 @@ function populateStandardFunctions(namespace) {
         }
         return new Racket.Bool(equal);
     }
+    namespace["string<=?"] = new Racket.Lambda(["str1","str2",".","rst"], new Racket.Exp(), namespace);
+    namespace["string<=?"].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length <= 2) {
+            outputlog("string<=? requires at least 2 arguments.");
+            return null;
+        }
+        for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
+            if (syntaxStrTreeArg[i].type === "Str")
+                equal = equal && (syntaxStrTreeArg[i].value <= syntaxStrTreeArg[i+1].value);
+            else {
+                outputlog("Not all arguments were Str Type");
+                return null;
+            }
+        }
+        return new Racket.Bool(equal);
+    }
+    namespace["string<?"] = new Racket.Lambda(["str1","str2",".","rst"], new Racket.Exp(), namespace);
+    namespace["string<?"].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length <= 2) {
+            outputlog("string<? requires at least 2 arguments.");
+            return null;
+        }
+        for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
+            if (syntaxStrTreeArg[i].type === "Str")
+                equal = equal && (syntaxStrTreeArg[i].value < syntaxStrTreeArg[i+1].value);
+            else {
+                outputlog("Not all arguments were Str Type");
+                return null;
+            }
+        }
+        return new Racket.Bool(equal);
+    }
+    namespace["string>?"] = new Racket.Lambda(["str1","str2",".","rst"], new Racket.Exp(), namespace);
+    namespace["string>?"].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length <= 2) {
+            outputlog("string>? requires at least 2 arguments.");
+            return null;
+        }
+        for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
+            if (syntaxStrTreeArg[i].type === "Str")
+                equal = equal && (syntaxStrTreeArg[i].value > syntaxStrTreeArg[i+1].value);
+            else {
+                outputlog("Not all arguments were Str Type");
+                return null;
+            }
+        }
+        return new Racket.Bool(equal);
+    }
+    namespace["string>=?"] = new Racket.Lambda(["str1","str2",".","rst"], new Racket.Exp(), namespace);
+    namespace["string>=?"].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length <= 2) {
+            outputlog("string>=? requires at least 2 arguments.");
+            return null;
+        }
+        for (var i=1; equal && i< syntaxStrTreeArg.length-1; ++i) {
+            if (syntaxStrTreeArg[i].type === "Str")
+                equal = equal && (syntaxStrTreeArg[i].value >= syntaxStrTreeArg[i+1].value);
+            else {
+                outputlog("Not all arguments were Str Type");
+                return null;
+            }
+        }
+        return new Racket.Bool(equal);
+    }
     namespace["substring"] = new Racket.Lambda(["str","start",".","end"], new Racket.Exp(), namespace);
     namespace["substring"].eval = function(syntaxStrTreeArg, namespace) {
         if (syntaxStrTreeArg.length <= 2 && syntaxStrTreeArg[1].type !== "Str") {
@@ -1260,10 +1328,10 @@ function populateStandardFunctions(namespace) {
     }
     namespace["not"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
     namespace["not"].eval = function(syntaxStrTreeArg, namespace) {
-        if (syntaxStrTreeArg.length == 2 && syntaxStrTreeArg[1].type === "Bool") {
-            return new Racket.Bool(!syntaxStrTreeArg[1].value);
+        if (syntaxStrTreeArg.length == 2) {
+            return new Racket.Bool(syntaxStrTreeArg[1].type === "Bool" && !syntaxStrTreeArg[1].value);
         } else {
-            outputlog("not did not receive 1 Bool.");
+            outputlog("not did not receive 1 argument.");
             return null;
         }
     }
@@ -1700,15 +1768,15 @@ function setupModuleLoading(){ //HTML API for reading files into a string
                 if (tokenized && parsedBlocks){
                     uploadedModulesParsed[fileupload.files[0].name] = parsedBlocks;
 
-                    //Add option to delete to html drop-down list
-                    deletemenu.options.add(new Option(fileupload.files[0].name,fileupload.files[0].name));
-
                     //But also make sure no duplicate names exist
                     for (var i = 0; i< deletemenu.options.length; ++i){
                         if (deletemenu.options[0].text === fileupload.files[0].name) {
-                            deletemenu.remove(deletemenu.selectedIndex);
+                            deletemenu.remove(i);
                         }
                     }
+
+                    //Add option to delete to html drop-down list
+                    deletemenu.options.add(new Option(fileupload.files[0].name,fileupload.files[0].name));
 
                     alert(fileupload.files[0].name+" uploaded and parsed successfully.");
                 } else
@@ -2090,12 +2158,12 @@ function parseLookupType(expression,namespace) {
     else if (specialForms[expression]) {
         //console.log("Looked up special form: "+  expression);
         return specialForms[expression];
-    } else if (namespace["#moduleNamespaces"]["#moduleProvide"] && namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(expression)) {
-        var moduleName = namespace["#moduleNamespaces"]["#moduleProvide"][expression].sourceModule;
-        return parseLookupType(expression,namespace["#moduleNamespaces"][moduleName]);
     } else if (namespace[expression]) {
         //console.log("Looked up: "+ expression +" in namespace: " + namespace);
         return namespace[expression];
+    } else if (namespace["#moduleNamespaces"]["#moduleProvide"] && namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(expression)) {
+        var moduleName = namespace["#moduleNamespaces"]["#moduleProvide"][expression].sourceModule;
+        return parseLookupType(expression,namespace["#moduleNamespaces"][moduleName]);
     } else if (expression === "#lang") { //#lang racket
         return false;
     } else {
