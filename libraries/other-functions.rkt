@@ -1,3 +1,4 @@
+;; Number Things
 (define (sub1 n) (- n 1))
 
 (define (add1 n) (+ n 1))
@@ -42,3 +43,9 @@
         [(and b2 (not b1))
          b2]
         [else false]))
+
+
+
+;; Vector Things
+(define (build-vector n proc)
+  (apply vector (build-list n proc)))

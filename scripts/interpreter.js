@@ -1462,6 +1462,14 @@ function populateStandardFunctions(namespace) {
             return null;
         }
     }
+    namespace["vector?"] = new Racket.Lambda(["vec"], new Racket.Exp(), namespace);
+    namespace["vector?"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length === 2){
+            return new Racket.Bool(syntaxStrTreeArg[1].type === "Vector");
+        } else {
+            return null;
+        }
+    }
     namespace["vector"] = new Racket.Lambda([".","list-arg"], new Racket.Exp(), namespace);
     namespace["vector"].eval = function(syntaxStrTreeArg, namespace) {
         if (syntaxStrTreeArg.length >= 1){
@@ -1498,7 +1506,6 @@ function populateStandardFunctions(namespace) {
     }
     namespace["vector-ref"] = new Racket.Lambda(["vec","pos"], new Racket.Exp(), namespace);
     namespace["vector-ref"].eval = function(syntaxStrTreeArg, namespace) {
-        console.log(syntaxStrTreeArg);
         if (syntaxStrTreeArg.length === 3 && syntaxStrTreeArg[1].type === "Vector" && syntaxStrTreeArg[2].type === "Num"){
             var index = syntaxStrTreeArg[2].value;
             if (0<= index && index<syntaxStrTreeArg[1].length)
@@ -1508,6 +1515,91 @@ function populateStandardFunctions(namespace) {
             }
         } else {
             outputlog("vector-ref was not called with 1 Vector and 1 Num.");
+            return null;
+        }
+    }
+    namespace["vector->list"] = new Racket.Lambda(["vec"], new Racket.Exp(), namespace);
+    namespace["vector->list"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1].type === "Vector"){
+            var vec = syntaxStrTreeArg[1];
+
+            return new Racket.FunctionCall(["list"].concat(vec.arr),namespace);
+        } else {
+            outputlog("vector->list was not called with 1 Vector.");
+            return null;
+        }
+    }
+    namespace["list->vector"] = new Racket.Lambda(["lst"], new Racket.Exp(), namespace);
+    namespace["list->vector"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Racket.List){
+            var arr = ["vector"];
+            var cell = syntaxStrTreeArg[1];
+            while(cell.type === "Cell"){
+                arr.push(cell.left);
+                cell = cell.right;
+            }
+            if (cell.type != "Empty"){
+                outputlog("vector-list was called with an improper List.")
+                return null;
+            }
+
+            return new Racket.FunctionCall(arr,namespace);
+        } else {
+            outputlog("vector->list was not called with 1 List.");
+            return null;
+        }
+    }
+    namespace["vector-append"] = new Racket.Lambda(["vec",".","rst"], new Racket.Exp(), namespace);
+    namespace["vector-append"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length >= 2){
+            var isAllVec = true;
+            for (var i=1; i<syntaxStrTreeArg.length; ++i){
+                isAllVec = isAllVec && syntaxStrTreeArg[i].type === "Vector";
+            }
+            if (isAllVec){
+                var arr = ["vector"];
+                for (var i=1; i<syntaxStrTreeArg.length; ++i){
+                    arr = arr.concat(syntaxStrTreeArg[i].arr);
+                }
+                return new Racket.FunctionCall(arr,namespace);
+            } else {
+                outputlog("vector-append was not called with all Vector arguments.");
+                return null;
+            }
+
+        } else {
+            outputlog("vector-append was not called with at least 1 Vector.");
+            return null;
+        }
+    }
+    namespace["vector-map"] = new Racket.Lambda(["proc","vec",".","rst"], new Racket.Exp(), namespace);
+    namespace["vector-map"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length >= 3){
+            var isAllVecAndSameLength = true;
+            var arrlen = syntaxStrTreeArg[2].length;
+            for (var i=2; i<syntaxStrTreeArg.length; ++i){
+                isAllVecAndSameLength = isAllVecAndSameLength && syntaxStrTreeArg[i].type === "Vector" && syntaxStrTreeArg[i].length === arrlen;
+            }
+            if (isAllVecAndSameLength){
+
+                var arr = ["vector"];
+
+                for (var i=0; i<arrlen; ++i){
+                    var exp = [syntaxStrTreeArg[1]];
+                    for (var k=2; k < syntaxStrTreeArg.length; ++k){
+                        exp.push(syntaxStrTreeArg[k].arr[i]);
+                    }
+                    arr.push(new Racket.FunctionCall(exp,namespace).eval());
+                }
+
+                return new Racket.FunctionCall(arr,namespace);
+            } else {
+                outputlog("vector-map was not called with all Vector arguments, or ones that are the same length.");
+                return null;
+            }
+
+        } else {
+            outputlog("vector-map was not called with at least 1 Vector.");
             return null;
         }
     }
@@ -2256,7 +2348,8 @@ function parseExpTree (syntaxStrTree, namespace) {
                         return result;
                     }
                 } else {
-                    outputlog("Special form "+syntaxStrTree[0]+" evaluation returned error");
+                    var type = (lookupExp.type === "SpecialForm"? "Special form: " : "Function or Lambda: ");
+                    outputlog(type+syntaxStrTree[0]+" evaluation returned error");
                     return null;
                 }
             } else {
