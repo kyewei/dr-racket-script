@@ -9,7 +9,7 @@ Most list operations and higher order list processing functions are implemented 
 since I found Racket's list processing functionalities the biggest difference compared to other traditional imperative programming languages.
 The web page where the interpreter resides, specifically the evaluation textbox, also auto-indents on every Enter-key press.
 
-Try it out [here](http://kyewei.github.io/dr-racket-script/)
+Try it out [here](http://kyewei.github.io/dr-racket-script/).
 
 ###Implementation Details
 In order to create this, I had to use patterns often found in functional programming, such as the idea of eval-apply cycle and recursion on structures,
@@ -97,7 +97,8 @@ Evaluation is done through every object having an eval() that accepts arguments,
             (sub1 n))))
 (sum2 0 5000) -> 12502500
 (sum2 0 10000) -> 50005000
-(sum2 0 500000) -> 125000250000 ;; Finishes after some time...
+(sum2 0 99999) -> 4999950000
+(sum2 0 500000) -> 125000250000 ;; Takes a while to finish...
 ```
 
 ###Special Forms
@@ -158,6 +159,6 @@ I will be adding features as I learn more of the language. These may include:
 * More functions
 
 ####Remark:
-Beware of deep stacks caused by recursion (by that I mean non-tail-recursion).
-Since most JS engines don't have tail call optimizations, deep recursion can give stack errors.
+Beware of deep stacks caused by recursion (by that I mean non-tail-recursive recursion).
+Since most JS engines don't optimize for deep stacks, deep recursion can give stack errors.
 Also, it's surprising how much work a person can get done during finals week...

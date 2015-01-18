@@ -759,15 +759,16 @@ function populateSpecialForms() {
                 //Make a separate namespace for each module, evaluate, and put this inside the
                 //  give namespace under #moduleNamespaces
                 var moduleNamespace = Namespace(libraryNamespace, true);
-                var stepExp = uploadedModulesParsed[fileName];
-                while (stepExp.length > 0) {
-                    stepExp = parseStepExpBlocks(stepExp, moduleNamespace);
-                }
 
                 // Make these containers every time new globalNamespace is made.
                 // This is a module globalNamespace
                 moduleNamespace["#moduleNamespaces"] = {};
                 moduleNamespace["#moduleNamespaces"]["#moduleProvide"] = {};
+
+                var stepExp = uploadedModulesParsed[fileName];
+                while (stepExp.length > 0) {
+                    stepExp = parseStepExpBlocks(stepExp, moduleNamespace);
+                }
 
                 //check provide to make sure all provided id's are actually defined
                 var provideAll = true;
@@ -1326,12 +1327,44 @@ function populateStandardFunctions(namespace) {
         }
         return new Racket.Bool(equal);
     }
+    namespace["char->integer"] = new Racket.Lambda(["chr1"], new Racket.Exp(), namespace);
+    namespace["char->integer"].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1].type==="Char") {
+            return new Racket.Num(syntaxStrTreeArg[1].value.charCodeAt(0));
+
+        } else {
+            outputlog("char->integer requires 1 Char argument.");
+            return null;
+        }
+    }
+    namespace["integer->char"] = new Racket.Lambda(["int"], new Racket.Exp(), namespace);
+    namespace["integer->char"].eval = function(syntaxStrTreeArg, namespace) {
+        var equal = true;
+        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1].type==="Num") {
+            return new Racket.Char(String.fromCharCode(syntaxStrTreeArg[1].value));
+        } else {
+            outputlog("integer->char requires 1 Num argument.");
+            return null;
+        }
+    }
     namespace["not"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
     namespace["not"].eval = function(syntaxStrTreeArg, namespace) {
         if (syntaxStrTreeArg.length == 2) {
             return new Racket.Bool(syntaxStrTreeArg[1].type === "Bool" && !syntaxStrTreeArg[1].value);
         } else {
             outputlog("not did not receive 1 argument.");
+            return null;
+        }
+    }
+    namespace["random"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
+    namespace["random"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length == 2 && syntaxStrTreeArg[1].type === "Num") {
+            var max = Math.floor(syntaxStrTreeArg[1].value); //for clarity
+            var min = 0;
+            return new Racket.Num(Math.floor(Math.random() * (max - min)) + min);
+        } else {
+            outputlog("random did not receive 1 argument.");
             return null;
         }
     }
@@ -1364,19 +1397,19 @@ function populateStandardFunctions(namespace) {
     }
     namespace["empty?"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
     namespace["empty?"].eval = function(syntaxStrTreeArg, namespace) {
-        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Racket.List) {
+        if (syntaxStrTreeArg.length === 2) {
             return new Racket.Bool(syntaxStrTreeArg[1].type === "Empty");
         } else {
-            outputlog("empty? was not called with 1 list.");
+            outputlog("empty? was not called with 1 argument.");
             return null;
         }
     }
     namespace["cons?"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
     namespace["cons?"].eval = function(syntaxStrTreeArg, namespace) {
-        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Racket.List) {
+        if (syntaxStrTreeArg.length === 2) {
             return new Racket.Bool(syntaxStrTreeArg[1].type === "Cell");
         } else {
-            outputlog("cons? was not called with 1 list.");
+            outputlog("cons? was not called with 1 argument.");
             return null;
         }
     }
@@ -2316,7 +2349,7 @@ function parseExpTree (syntaxStrTree, namespace) {
                 // If the function is accessed by id, (presumably meaning it is not a temporary lambda), then
                 // fnName would be a string (id) and tail recursion would occur
                 // Also, it cannot be a special form, so this checks for that too
-                if (aggressiveOptimization && (typeof fnName == 'string' /*|| fnName instanceof String*/) && !specialForms[fnName] /*&& !evalNamespace.hasOwnProperty(fnName)*/){
+                if (aggressiveOptimization && (typeof fnName == 'string' || fnName instanceof String) && !specialForms[fnName] /*&& !evalNamespace.hasOwnProperty(fnName)*/){
                     //console.log(fnName);
 
                     // Then proceeds to find the deepest namespace that has this as defined function that is identical

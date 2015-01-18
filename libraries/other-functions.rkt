@@ -1,3 +1,5 @@
+#lang racket
+
 ;; Number Things
 (define (sub1 n) (- n 1))
 
@@ -49,3 +51,46 @@
 ;; Vector Things
 (define (build-vector n proc)
   (apply vector (build-list n proc)))
+
+
+;; Char Things
+
+(define (char<=? chr1 chr2 . rst)
+  (define ord1 (char->integer chr1))
+  (define ord2 (char->integer chr2))
+  (define pred (<= ord1 ord2))
+  (cond [(not pred) #f]
+        [(and (empty? rst)
+              pred)
+         #t]
+        [else (apply char<=? (cons chr2 rst))]))
+
+(define (char<? chr1 chr2 . rst)
+  (define ord1 (char->integer chr1))
+  (define ord2 (char->integer chr2))
+  (define pred (< ord1 ord2))
+  (cond [(not pred) #f]
+        [(and (empty? rst)
+              pred)
+         #t]
+        [else (apply char<? (cons chr2 rst))]))
+
+(define (char>? chr1 chr2 . rst)
+  (define ord1 (char->integer chr1))
+  (define ord2 (char->integer chr2))
+  (define pred (> ord1 ord2))
+  (cond [(not pred) #f]
+        [(and (empty? rst)
+              pred)
+         #t]
+        [else (apply char>? (cons chr2 rst))]))
+
+(define (char>=? chr1 chr2 . rst)
+  (define ord1 (char->integer chr1))
+  (define ord2 (char->integer chr2))
+  (define pred (>= ord1 ord2))
+  (cond [(not pred) #f]
+        [(and (empty? rst)
+              pred)
+         #t]
+        [else (apply char>=? (cons chr2 rst))]))
