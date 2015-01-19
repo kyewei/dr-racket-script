@@ -1245,7 +1245,7 @@ function populateStandardFunctions(namespace) {
     }
     namespace["string-ref"] = new Racket.Lambda(["str","index"], new Racket.Exp(), namespace);
     namespace["string-ref"].eval = function(syntaxStrTreeArg, namespace) {
-        if (syntaxStrTreeArg.length != 3 && syntaxStrTreeArg[1].type !== "Str" && syntaxStrTreeArg[2].type !== "Num") {
+        if (syntaxStrTreeArg.length != 3 || syntaxStrTreeArg[1].type !== "Str" || syntaxStrTreeArg[2].type !== "Num") {
             outputlog("string-ref requires a Str and Num argument.");
             return null;
         }
@@ -1254,7 +1254,7 @@ function populateStandardFunctions(namespace) {
     }
     namespace["string-length"] = new Racket.Lambda(["str"], new Racket.Exp(), namespace);
     namespace["string-length"].eval = function(syntaxStrTreeArg, namespace) {
-        if (syntaxStrTreeArg.length <= 2 && syntaxStrTreeArg[1].type !== "Str") {
+        if (syntaxStrTreeArg.length <= 2 || syntaxStrTreeArg[1].type !== "Str") {
             outputlog("string-length requires at least 2 arguments.");
             return null;
         }
@@ -1288,7 +1288,7 @@ function populateStandardFunctions(namespace) {
     }
     namespace["string->list"] = new Racket.Lambda(["str"], new Racket.Exp(), namespace);
     namespace["string->list"].eval = function(syntaxStrTreeArg, namespace) {
-        if (syntaxStrTreeArg.length !== 2 && syntaxStrTreeArg[1].type !== "Str") {
+        if (syntaxStrTreeArg.length !== 2 || syntaxStrTreeArg[1].type !== "Str") {
             outputlog("string->list requires 1 Str argument.");
             return null;
         }
@@ -1309,6 +1309,107 @@ function populateStandardFunctions(namespace) {
             }
         }
         return new Racket.FunctionCall(chrlist.slice(0,chrlist.length-shift),namespace);
+    }
+    namespace["print"] = new Racket.Lambda(["obj"], new Racket.Exp(), namespace);
+    namespace["print"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length !== 2 || !syntaxStrTreeArg[1].type instanceof Racket.Type) {
+            outputlog("print requires 1 argument.");
+            return null;
+        }
+        outputfield.value+=syntaxStrTreeArg[1].toString();
+        return true;
+    }
+    namespace["write"] = namespace["print"]; // For now until I actually write lists as '() ...
+    namespace["display"] = namespace["print"];
+    namespace["fprintf"] = new Racket.Lambda(["out","form","v",".","rst"], new Racket.Exp(), namespace);
+    namespace["fprintf"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length < 4 || syntaxStrTreeArg[2].type != "Str") {
+            outputlog("fprintf did not receive the right arguments.");
+            return null;
+        }
+        var currentObject = 3;
+        var formatStr = syntaxStrTreeArg[2].value;
+
+        // defaults to console box for #<output-port>
+        var out = outputfield;
+        var error = false;
+        for (var i = 0; i< formatStr.length && currentObject < syntaxStrTreeArg.length; ++i) {
+            if (formatStr.charAt(i) === "\~") {
+                ++i;
+                //console.log(formatStr.charAt(i), error,currentObject);
+
+                switch (formatStr.charAt(i)) {
+                    case "n":
+                    case "\%":
+                        out.value +="\n";
+                        break;
+                    case "a": //use (display)
+                    case "A":
+                        error = ! (new Racket.FunctionCall(["display",syntaxStrTreeArg[currentObject]],namespace).eval());
+                        ++currentObject;
+                        break;
+                    case "s": //use (write)
+                    case "S":
+                        error = ! (new Racket.FunctionCall(["write",syntaxStrTreeArg[currentObject]],namespace).eval());
+                        ++currentObject;
+                        break;
+                    case "v": //use (print)
+                    case "V":
+                        error = ! (new Racket.FunctionCall(["print",syntaxStrTreeArg[currentObject]],namespace).eval());
+                        ++currentObject;
+                        break;
+                    // ~. ~e ~E ~c ~C ~b ~B ~o ~0 ~x ~X ~<whitespace> are not supported
+                    case "\~":
+                        out.value +="\~";
+                        break;
+                    default:
+                        error = true;
+                        break;
+                }
+                if (error) {
+                    break;
+                }
+            } else if (formatStr.charAt(i) === "\\") { //escapes
+                ++i;
+
+                switch (formatStr.charAt(i)) {
+                    case "n":
+                        out.value+= "\n";
+                        break;
+                    case "t":
+                        out.value+= "\t";
+                        break;
+                    case "\\":
+                        out.value+= "\\";
+                        break;
+                    case "\'":
+                        out.value+= "\'";
+                        break;
+                    case "\"":
+                        out.value+= "\"";
+                        break;
+                    default:
+                        break;
+                }
+            } else {
+                out.value+=""+formatStr.charAt(i);
+            }
+        }
+        if (error) {
+            outputlog("fprintf has received an unsupported \~ operator");
+            return null;
+        } else {
+            return true; //no errors
+        }
+    }
+    namespace["printf"] = new Racket.Lambda(["form","v",".","rst"], new Racket.Exp(), namespace);
+    namespace["printf"].eval = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length < 3) {
+            outputlog("printf did not receive the right arguments.");
+            return null;
+        }
+        // Empty is a placeholder for when i implement #<output-port>
+        return new Racket.FunctionCall(["fprintf",new Racket.Empty(),syntaxStrTreeArg[1]].concat(syntaxStrTreeArg.slice(2)),namespace);
     }
     namespace["char=?"] = new Racket.Lambda(["chr1","chr2",".","rst"], new Racket.Exp(), namespace);
     namespace["char=?"].eval = function(syntaxStrTreeArg, namespace) {
@@ -1357,7 +1458,7 @@ function populateStandardFunctions(namespace) {
             return null;
         }
     }
-    namespace["random"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
+    namespace["random"] = new Racket.Lambda(["max"], new Racket.Exp(), namespace);
     namespace["random"].eval = function(syntaxStrTreeArg, namespace) {
         if (syntaxStrTreeArg.length == 2 && syntaxStrTreeArg[1].type === "Num") {
             var max = Math.floor(syntaxStrTreeArg[1].value); //for clarity
@@ -2268,7 +2369,8 @@ function parseStepExpBlocks (syntaxStrBlocks, namespace) {
 function parseLookupType(expression,namespace) {
     //console.log("Tried parsing: "+ expression);
     //console.log(namespace);
-    if (expression instanceof Racket.Type || expression instanceof Racket.FunctionCall)
+    if (expression instanceof Racket.Type || expression === null)
+        //replaced (expression instanceof Racket.Type || expression instanceof Racket.FunctionCall) for now
         return expression;
     else if (expression[0]==="\"" && expression[expression.length-1]==="\"")
         return new Racket.Str(expression.substring(1,expression.length-1));
