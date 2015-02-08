@@ -4,6 +4,7 @@ var outputfield;
 var clearbutton;
 var fileupload;
 var filesubmit;
+var filename;
 var deletemenu;
 var deletebutton;
 
@@ -1884,6 +1885,7 @@ function prep() {
     filesubmit = document.getElementById("file-upload-submit");
     deletemenu = document.getElementById("delete-module-menu");
     deletebutton = document.getElementById("delete-button");
+    filename = document.getElementById("file-name");
     deletebutton.onclick = function() {
         var filename = deletemenu.value;
         if (uploadedModulesParsed[filename])
@@ -2099,6 +2101,9 @@ function loadCode(){
 
 
 function setupModuleLoading(){ //HTML API for reading files into a string
+    fileupload.onchange = function() {
+        filename.value = fileupload.files[0].name;
+    };
     filesubmit.onclick = function() {
         if (fileupload.files && fileupload.files[0]){//exists when file is selected
             var file = fileupload.files[0];
