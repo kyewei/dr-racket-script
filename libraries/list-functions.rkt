@@ -1,3 +1,6 @@
+#lang racket
+
+;; List Things
 (define (filter fn lst)
   (cond [(empty? lst) empty]
         [(fn (first lst))
@@ -120,6 +123,13 @@
                                         (cons (fn count)
                                               acc))]))]
     (build-list/acc (sub1 num) empty)))
+
+(define (flatten lst)
+  (cond [(empty? lst) empty]
+        [(cons? lst)
+         (append (flatten (first lst))
+                 (flatten (rest lst)))]
+        [else (list lst)]))
 
 (define (reverse lst)
   (foldl cons empty lst))
