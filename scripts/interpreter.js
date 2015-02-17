@@ -2139,64 +2139,97 @@ function setupModuleLoading(){ //HTML API for reading files into a string
 
 
 function tokenize(input) {
-    var temp = input.replace(/['\(\)\[\]]/g, function(a){return " "+a+" ";})
-    //|(?=[\(\)\[\]])|(?<=[\(\)\[\]])
-    // Why does JS not support positive look-behind? :(
-    //console.log(temp);
-    var temp2 = "";
-    var quoteEnabled = false;
-    var multilineCommentEnabled = false;
-    for (var i=0; i< temp.length; ++i) {
-        if (temp.charAt(i) === "\"")
-            quoteEnabled = true;
-        else if (temp.substring(i,i+2) === "\#\|")
-            multilineCommentEnabled = true;
-
-        if (quoteEnabled) {
-            var quoteEnd = i;
-            for (var j=i+1; j< temp.length; ++j) {
-                if (temp.charAt(j) === "\"") {
-                    quoteEnd = j;
-                    j = temp.length;
+    var result = [];
+    function searchForward(str,idx,str2){
+        for (var i=idx; i<str.length; ++i){
+            if (str2 === str.charAt(i))
+                return i;
+        }
+        return -1;
+    }
+    function searchForwardNestedComments(str,idx) {
+        var open = "\#\|";
+        var closed  = "\|\#";
+        var count = 1;
+        for (var i=idx; i<str.length; ++i){
+            var st=str.substring(i,i+2);
+            if (st === open) {
+                count++;
+                continue;
+            } else if (st === closed) {
+                count--;
+                if (count <=0){
+                    return i;
                 }
+                continue;
             }
-            if (quoteEnd === i) {
+        }
+        return -1;
+    }
+    var separators = [" ","\n","\r","\(","\)","\[","\]","\'"];
+    function searchForwardArr(str,idx,arr) {
+        for (var i=idx; i<str.length; ++i){
+            if (arr.indexOf(str.charAt(i))!=-1)
+                return i;
+        }
+        return -1;
+    }
+
+    // Overhaul tokenizing to not use regex, since can't control special conditions with it
+    // Should also be faster...
+    for (var i=0; i< input.length; ++i){
+        var special=0;
+        if (input.charAt(i) === "\""){
+            special=searchForward(input,i+1,"\"");
+            if (special !==-1){
+                result.push(input.substring(i,special+1));
+                i=special;
+                continue;
+            } else {
                 console.log("Mismatching quotes when tokenizing.");
                 return null;
             }
-            var quoted = temp.substring(i, quoteEnd+1);
-            var unquoted = quoted.replace(/ ['\(\)\[\]] /g, function(a){return a.charAt(1);});
-
-            temp2 += unquoted;
-            i = quoteEnd;
-            quoteEnabled = false;
-        } else if (multilineCommentEnabled) {
-            var commentEnd = i;
-            var nestedComments = 1;
-            for (var j=i+1; j< temp.length; ++j) {
-                if (temp.substring(j,j+2) === "\#\|") {
-                    nestedComments++;
-                } else if (temp.substring(j,j+2) === "\|\#") {
-                    nestedComments--;
-                }
-                if (nestedComments === 0){
-                    commentEnd = j;
-                    j = temp.length
-                }
+        } else if (input.substring(i,i+2) === "\#\|") {
+            special = searchForwardNestedComments(input,i+1);
+            console.log(input.substring(special));
+            if (special !==-1){
+                //result.push(input.substring(i,special+1+2));
+                i=special+1;
+                continue;
+            } else {
+                console.log("Mismatching nested comments when tokenizing.");
+                return null;
             }
-            if (commentEnd === i || nestedComments >0) {
-              console.log("Mismatching nested comments when tokenizing.");
-              return null;
+        } else if (input.charAt(i) === "\'"){
+            result.push(input.charAt(i));
+            continue;
+        } else if (input.charAt(i) === "\(" || input.charAt(i) === "\)"){
+            result.push(input.charAt(i));
+            continue;
+        } else if (input.charAt(i) === "\[" || input.charAt(i) === "\]"){
+            //result.push(input.charAt(i) === "\[" ? "\(" : "\)");
+            result.push(input.charAt(i));
+            continue;
+        } else if (input.charAt(i) === " " || input.charAt(i) === "\n" || input.charAt(i) === "\r") {
+            continue;
+        } else if (input.charAt(i) === ";") {
+            special = searchForward(input,i+1,"\n");
+            if (special !==-1){
+                i=special;
+                continue;
             }
-            i = commentEnd+2;
-            multilineCommentEnabled = false;
-        } else
-            temp2 +=temp.charAt(i);
+            continue;
+        } else {
+            special = searchForwardArr(input,i+1,separators);
+            if (special === -1){
+                special = input.length;
+            }
+            result.push(input.substring(i,special));
+            i=special-1;
+            continue;
+        }
     }
-    //console.log(temp2);
-    // Semicolon to account for comments
-    var temp3 = temp2.split(/[\s\n]+|\;.*/g);
-    return temp3.filter( function(str){return str!="";} );
+    return result;
 };
 
 function importCode(str){
@@ -2242,6 +2275,8 @@ function evaluate() {
 
 
 function parseStr(strArr) {
+    strArr.unshift("["); // Treat entire code as an array
+    strArr.push("]");
 
     //This is a preliminary check for correct bracket pairing and count
     var bracketStack = [];
@@ -2288,176 +2323,70 @@ function parseStr(strArr) {
             strArr[i] = ")";
     }
 
-    //Recognize first level code blocks;
-    var strCodeBlocks = recognizeBlock(strArr);
-
-    console.log("Parsed String Code Blocks:" );
-    console.log(strCodeBlocks);
-
-    //Recursively generate tree of code syntax
-    var parsedStrCodeTree = new Array (strCodeBlocks.length);
-    for (var i=0; i< strCodeBlocks.length; ++i) {
-        if (Array.isArray(strCodeBlocks[i]))
-            parsedStrCodeTree[i] = recursivelyBuildCodeTree(strCodeBlocks[i]);
-        else
-            parsedStrCodeTree[i] = strCodeBlocks[i];
-    }
-
+    var parsedStrCodeTree = produceCodeBlocks(strArr);
     console.log("Parsed String Tree:" );
     console.log(parsedStrCodeTree);
 
     return parsedStrCodeTree;
 };
 
+function produceCodeBlocks(tokens){
+    var block = [];
 
-function recognizeBlock(unparsedBlocks) {
-    if (unparsedBlocks.length ===1)
-        return unparsedBlocks;
-    block = [];
-    // unparsedBlocks gets shorter as it is consumed
-    // experimented with scheme-style recursion where recursing element is used up
-    while (unparsedBlocks.length > 0){
-        if (unparsedBlocks[0]==="'") {
-            var firstNotSymbol;
-            for (var i=1; i<unparsedBlocks.length; ++i) {
-                if (unparsedBlocks[i] !== "'") {
-                    firstNotSymbol = i;
-                    i = unparsedBlocks.length; //exit loop
+    var open = "\(";
+    var closed = "\)";
+    var quote = "\'";
+    function findBracketEnd(tokens, idx){
+        var count = 1;
+        for (var i=idx; i<tokens.length; ++i) {
+            if (tokens[i] === open){
+                count++;
+                continue;
+            } else if (tokens[i] === closed){
+                count--;
+                if (count <=0){
+                    return i;
                 }
-            }
-            if (firstNotSymbol) {
-                if (unparsedBlocks[firstNotSymbol] === "(") {
-                    var bracketcount = 1;
-                    for (var i=firstNotSymbol+1; i<unparsedBlocks.length; ++i) {
-                        if (unparsedBlocks[i]==="(")
-                            bracketcount++;
-                        else if (unparsedBlocks[i]===")") {
-                            bracketcount--;
-                            if (bracketcount === 0) {
-                                var splicedblock = unparsedBlocks.slice(0,i+1);
-                                block.push(splicedblock);
-                                unparsedBlocks = unparsedBlocks.slice(i+1,unparsedBlocks.length);
-                                i = unparsedBlocks.length; //found end of block, exit loop
-                            }
-                        }
-                    }
-                } else {//singleton, not list
-                    var splicedblock = unparsedBlocks.slice(0,firstNotSymbol+1);
-                    block.push(splicedblock);
-                    unparsedBlocks = unparsedBlocks.slice(firstNotSymbol+1,unparsedBlocks.length);
-                }
-            } else { //should never be reached, since this means ' ends code
-                outputlog("Unfinished \'.");
+                continue;
             }
         }
-        else if (unparsedBlocks[0]==="(") {
-            var bracketcount = 1;
-            for (var i=1; i<unparsedBlocks.length; ++i) {
-                if (unparsedBlocks[i]==="(")
-                    bracketcount++;
-                else if (unparsedBlocks[i]===")") {
-                    bracketcount--;
-                    if (bracketcount === 0) {
-                        var splicedblock = unparsedBlocks.slice(0,i+1);
-                        block.push(splicedblock);
-                        unparsedBlocks = unparsedBlocks.slice(i+1,unparsedBlocks.length);
-                        i = unparsedBlocks.length;
-                    }
-                }
-            }
-        } else if (unparsedBlocks[0]===")"){
-            console.log("Extra brackets");
-            return null;
-        } else {
-            block.push (unparsedBlocks[0]);
-            unparsedBlocks = unparsedBlocks.slice(1);
-        }
+        return -1;
     }
-    return block;
-};
-
-// strBlock is Array of (String)
-// returns Array of (String or (Array of (String)))
-function recursivelyBuildCodeTree(strBlock) {
-    //console.log("recursivelyBuildCodeTree called with: ");
-    //console.log(strBlock);
-    if (strBlock.length>0) {
-        var subBlocks = [];
-        var startIndex = 0;
-        var bracketCount = 0;
-
-        //initial brackets
-        if (strBlock[0] ==="(" && strBlock[strBlock.length-1] ===")") {
-            startIndex = 1;
+    var bracketCount=0;
+    for (var i = 0; i < tokens.length; ++i) {
+        if (tokens[i] == open){
             bracketCount++;
-
-            //tracking expressions
-            //this time tried traditional for-loop with indexes for applying recursion to strBlock
-            for (var i=1; i< strBlock.length-1; ++i) {
-                //subexpression
-                if (strBlock[i] ==="(") {
-
-                    //console.log("Subexpression!");
-                    bracketCount++;
-
-                    var closedBracketCount = bracketCount-1;
-
-                    //searches for closing bracket, then slices and recurses
-                    for (var j=i+1; j< strBlock.length; ++j) {
-                        //console.log("i:"+ i + ", j:" +j);
-                        if (strBlock[j] ==="(")
-                            bracketCount++;
-                        else if (strBlock[j] ===")"){
-                            bracketCount--;
-                            if (closedBracketCount == bracketCount) {
-                                //console.log("Found closing bracket!");
-                                var subExpression = recursivelyBuildCodeTree(strBlock.slice(startIndex,j+1));
-                                subBlocks.push(subExpression);
-                                startIndex =j+1;
-                                i=j; //i++ is done everytime
-                                j = strBlock.length; //exit inner loop
-                            }
-                        }
-                    }
-                    if (closedBracketCount < bracketCount) {
-                        console.log("Missing brackets");
+            if (i>0){
+                var end = findBracketEnd(tokens,i+1);
+                if (end !=-1) {
+                    var result = produceCodeBlocks(tokens.slice(i,end+1));
+                    if (result) {
+                        block.push(result);
+                        i = end;
+                        bracketCount--;
+                        continue;
+                    } else {
+                        console.log("Sub-block is null.");
+                        //console.log(tokens);
                         return null;
                     }
                 }
-                else if (strBlock[j] ===")"){
-                    bracketCount--;
-                }
-                //singleton, directly add to exp tree
-                else {
-                    var singleton = strBlock.slice(startIndex,i+1)[0];
-                    //console.log("Singleton: ");
-                    //console.log(singleton);
-                    subBlocks.push(singleton);
-                    startIndex=i+1;
-                }
             }
-
-            // decrement for closing brackets here
+        } else if (tokens[i] == closed) {
             bracketCount--;
+        } else if (tokens[i] == quote) {
+            block.push(tokens[i]);
+        } else {
+            block.push(tokens[i]);
         }
-        else {
-            console.log("Bracket-less array code block!");
-            return null;
-        }
-        if (bracketCount !== 0)
-            console.log("Bracket count failed, produced :" + bracketCount + " instead of expected value 0");
-        return subBlocks;
     }
-    else if (strBlock.length == 0)
-        //should not be brackets
-        return strBlock[0];
-    else
-        console.log("Null element!!!");
+    if (bracketCount!=0){
+        console.log("Mismatching brackets.");
+        //console.log(tokens);
         return null;
-
-};
-
-
+    }
+    return block;
+}
 
 function parseStepExpBlocks (syntaxStrBlocks, namespace) {
     if (syntaxStrBlocks.length > 0) {
