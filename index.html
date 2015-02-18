@@ -66,17 +66,21 @@
                   autofocus></textarea>
         <p>
         Note: evaluated code does not persist.
-        <br>
-        <button type="button"
-                id="submit-button"
-                class="btn btn-primary">Submit</button>
-        <label class="checkbox-inline">
-            <input type="checkbox"
-                   id="auto-clear-checkbox"
-                   name="terms"
-                   checked/>
-                   Auto-Clear Console Output
-        </label>
+        <div class="form-inline">
+            <button type="button"
+                    id="re-indent-button"
+                    class="btn btn-primary">Re-Indent All</button>
+            <button type="button"
+                    id="submit-button"
+                    class="btn btn-primary">Submit</button>
+            <label class="checkbox-inline">
+                <input type="checkbox"
+                       id="auto-clear-checkbox"
+                       name="terms"
+                       checked/>
+                       Auto-Clear Console Output
+            </label>
+        </div>
         <br>
         <br>
         <h4>Console Output:</h4>
@@ -87,9 +91,11 @@
                   id="code-output"
                   readonly></textarea>
         <p>
-        <button type="button"
-                id="clear-button"
-                class="btn btn-primary">Clear</button>
+        <div class="form-inline">
+            <button type="button"
+                    id="clear-button"
+                    class="btn btn-primary">Clear</button>
+        </div>
         <br>
         <br>
 

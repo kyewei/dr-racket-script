@@ -1,5 +1,6 @@
 var textfield;
 var submitbutton;
+var reindentbutton;
 var outputfield;
 var clearbutton;
 var fileupload;
@@ -936,6 +937,14 @@ function populateSpecialForms() {
 var specialForms = populateSpecialForms();
 
 function populateStandardFunctions(namespace) {
+    // All functions' eval calls' namespace variable is a variable that is usually not used.
+    //   However, do not depend on that.
+    //   This is because most functions here do not call on other functions as a result
+    //   It is there so that function calls look the same as special form/keyword calls
+
+    // However, since some functions like (apply) need a context in which function application works,
+    //   namespace is used to maintain environment
+
     namespace["void"] = new Racket.Lambda([".","rst"], new Racket.Exp(), namespace);
     namespace["void"].eval = function(syntaxStrTreeArg, namespace) {
         return new Racket.Void();
@@ -1879,6 +1888,7 @@ function prep() {
     textfield = document.getElementById("code-field");
     outputfield = document.getElementById("code-output");
     submitbutton = document.getElementById("submit-button");
+    reindentbutton = document.getElementById("re-indent-button");
     checkbox = document.getElementById("auto-clear-checkbox");
     clearbutton = document.getElementById("clear-button");
     fileupload = document.getElementById("file-upload");
@@ -1886,6 +1896,15 @@ function prep() {
     deletemenu = document.getElementById("delete-module-menu");
     deletebutton = document.getElementById("delete-button");
     filename = document.getElementById("file-name");
+    reindentbutton.onclick = function() {
+        textfield.value = textfield.value.trim();
+        for (var i=0; i< textfield.value.length; ++i) {
+            if (textfield.value.charAt(i) === "\n"){
+                setCaretPos(textfield,i+1);
+                automaticIndent({"keyCode":13});
+            }
+        }
+    }
     deletebutton.onclick = function() {
         var filename = deletemenu.value;
         if (uploadedModulesParsed[filename])
@@ -1909,7 +1928,8 @@ function outputlog(str) {
     outputfield.value += str+"\n";
     //console.log("Logged: "+str);
 };
-
+var setCaretPos;
+var getCaretPos;
 function automaticIndent(e) {
 
     // Cross-browser caret position code source:
@@ -1928,6 +1948,7 @@ function automaticIndent(e) {
             CaretPos = ctrl.selectionStart;
         return (CaretPos);
     }
+    getCaretPos=doGetCaretPosition;
     function setCaretPosition(ctrl, pos)
     {
         if(ctrl.setSelectionRange)
@@ -1943,6 +1964,7 @@ function automaticIndent(e) {
             range.select();
         }
     }
+    setCaretPos=setCaretPosition;
     function trim(str) {// trim that removes whitespace but not newlines;
         return str.replace(/^[^\S\n]+|\s+$/g,'');
     }
@@ -2191,7 +2213,6 @@ function tokenize(input) {
             }
         } else if (input.substring(i,i+2) === "\#\|") {
             special = searchForwardNestedComments(input,i+1);
-            console.log(input.substring(special));
             if (special !==-1){
                 //result.push(input.substring(i,special+1+2));
                 i=special+1;
@@ -2212,10 +2233,13 @@ function tokenize(input) {
             continue;
         } else if (input.charAt(i) === " " || input.charAt(i) === "\n" || input.charAt(i) === "\r") {
             continue;
-        } else if (input.charAt(i) === ";") {
+        } else if (input.charAt(i) === "\;") {
             special = searchForward(input,i+1,"\n");
+            if (special === -1){
+                special = input.length;
+            }
             if (special !==-1){
-                i=special;
+                i=special;//-1;
                 continue;
             }
             continue;
