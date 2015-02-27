@@ -52,8 +52,8 @@ Racket.Exp = function () {
 Racket.SpecialForm = function () {
     this.type = "SpecialForm";
     this.eval = function (syntaxStrTreeArg, namespace, continuation) {
-        continuation = continuation || new Racket.Continuation(); // I WILL GET RID OF THIS LATER
-        var result = this.evalBody(syntaxStrTreeArg,namespace);
+        continuation = continuation || new Racket.Continuation(namespace); // I WILL GET RID OF THIS LATER
+        var result = this.evalBody(syntaxStrTreeArg,namespace, continuation);
         if (result.type === "SExp") {
             !DEBUG || console.log(result);
             result.continuation = continuation;
@@ -199,8 +199,8 @@ Racket.Lambda = function (ids, body, namespace) {
         this.body = body[0];
     this.inheritedNamespace = namespace;
     this.eval = function (syntaxStrTreeArg, namespace, continuation) {
-        continuation = continuation || new Racket.Continuation(); // I WILL GET RID OF THIS LATER
-        var result = this.evalBody(syntaxStrTreeArg,namespace);
+        continuation = continuation || new Racket.Continuation(namespace); // I WILL GET RID OF THIS LATER
+        var result = this.evalBody(syntaxStrTreeArg,namespace,continuation); // usually the third parameter is not used
         if (result.type === "SExp") {
             !DEBUG || console.log(result);
             result.continuation = continuation;
@@ -299,7 +299,7 @@ Racket.SExp = function(exp, namespace, continuation) { // This is a wrapper for 
     this.exp = exp;
     this.expState = 0;
     this.namespace = namespace;
-    this.continuation = continuation || new Racket.Continuation(); // shouldn't have to be here, will clean up later
+    this.continuation = continuation || new Racket.Continuation(namespace); // shouldn't have to be here, will clean up later
     this.callName=null;
     this.evalFinal = function() {
         var sexp = this;
@@ -326,14 +326,13 @@ Racket.SExp = function(exp, namespace, continuation) { // This is a wrapper for 
                 return exp[0].eval(this.exp,this.namespace,this.continuation);
 
             } else { //if (expState < exp.length){
-                var expState = this.expState;
-                if (expState === 0) {
+                if (this.expState === 0) {
                     var fnName = this.exp[0];
                     if (typeof fnName == 'string' || fnName instanceof String) {
                         this.callName=fnName;
                     }
                 }
-                if (expState === 1){
+                if (this.expState === 1){
                     if (this.exp[0].type === "SpecialForm"){
                         // leave
                         !DEBUG || console.log("Leaving for special Form.");
@@ -345,6 +344,7 @@ Racket.SExp = function(exp, namespace, continuation) { // This is a wrapper for 
                     }
                 }
 
+                var expState = this.expState;
                 var newExp=[];
                 for (var i=0; i< this.exp.length; ++i) {
                     if (i != expState){
@@ -354,14 +354,15 @@ Racket.SExp = function(exp, namespace, continuation) { // This is a wrapper for 
                 var origCC = this.continuation;
                 var origName = this.callName;
                 var origNamespace = this.namespace;
-                var innerCC =new Racket.Continuation(function(r,n){ var cExp = newExp;
-                                                                    cExp[expState]=r;
-                                                                    var funcCall = new Racket.SExp(cExp,origNamespace,origCC);
-                                                                    funcCall.expState = expState+1;
-                                                                    funcCall.callName = origName;
-                                                                    return funcCall; });
+                var innerCC = new Racket.Continuation(origNamespace,
+                                    function(r,n){  var cExp = newExp;
+                                                    cExp[expState]=r;
+                                                    var funcCall = new Racket.SExp(cExp,origNamespace,origCC);
+                                                    funcCall.expState = expState+1;
+                                                    funcCall.callName = origName;
+                                                    return funcCall; });
 
-                var next = new Racket.SExp(this.exp[expState],this.namespace,innerCC);
+                var next = new Racket.SExp(this.exp[this.expState],this.namespace,innerCC);
                 return next;
 
             }
@@ -388,14 +389,19 @@ return continuation.eval([continuation,result],namespace,continuation);
 
 */
 
-Racket.Continuation = function (continuation) {
+Racket.Continuation = function (namespace,continuation) {
     this.type = "Continuation";
+    this.toString = function() {
+        return "\#\<continuation\>";
+    }
+    this.namespace = namespace;
     this.continuation = continuation || function(r) { return r; };
     this.eval = function (exp,namespace,continuation) {
         // Called like (cc result)
         // var continuation is never used
+        // var namespace is never used
         !DEBUG || console.log("result: ", exp);
-        return this.continuation(exp[1],namespace);
+        return this.continuation(exp[1],this.namespace);
     }
 }
 
@@ -936,25 +942,57 @@ function populateSpecialForms() {
         }
     }
     keywords["begin"] = new Racket.SpecialForm();
-    keywords["begin"].evalBody = function (syntaxStrTree, namespace) {
+    keywords["begin"].evalBody = function (syntaxStrTree, namespace, continuation) {
         //assert syntaxStrTree[0] === "begin"
         // in the form of :
         // (begin exp ... final-exp)
 
         var beginNamespace = (namespace["#isTopLevel"]?namespace:Namespace(namespace, true));
+        var exp = [];
         for (var i=1; i<syntaxStrTree.length; ++i) {
-            if (i !== syntaxStrTree.length-1) {
-                var exp = new Racket.SExp(syntaxStrTree[i], beginNamespace).evalFinal();
-
-                // Expression is simplest form outputs are spliced to surrounding context
-                //   meaning result is made output
-                if (namespace["#isTopLevel"] && exp && exp !== true) {
-                    outputlog(""+exp); //Print output to console
-                }
-            }
-            else
-                return new Racket.SExp(syntaxStrTree[i], beginNamespace);
+            exp[i-1] = syntaxStrTree[i];
         }
+        var beginSExp = new Racket.SExp(exp,beginNamespace,continuation);
+        beginSExp.expState = 0;
+        beginSExp.callName = "begin";
+        beginSExp.eval = function(){
+            //Assume this.exp is Array, otherwise, this wouldn't be called in the first place
+            if (this.expState >= this.exp.length) {
+                return this.continuation.eval([this.continuation, this.exp[this.exp.length-1]],this.namespace,this.continuation);
+            } else {//if (this.expState < this.exp.length) {
+                var expState = this.expState;
+                var origNamespace = this.namespace;
+                var origCC = this.continuation;
+                var origExp = this.exp;
+                var origEval = this.eval;
+                var origName = this.callName;
+                var newExp=[];
+                for (var i=0; i< this.exp.length; ++i) {
+                    if (i != expState){
+                        newExp[i]=this.exp[i];
+                    }
+                }
+                var innerCC = new Racket.Continuation(origNamespace,
+                                            function(r,n) { var cExp = newExp;
+                                                            cExp[expState]=r;
+                                                            var funcCall = new Racket.SExp(cExp,origNamespace,origCC);
+                                                            funcCall.eval = origEval;
+                                                            funcCall.expState = expState+1;
+                                                            funcCall.callName = origName;
+
+                                                            // Expression is simplest form outputs are spliced to surrounding context
+                                                            //   meaning result is made output
+                                                            if (origNamespace["#isTopLevel"] && r && r !== true) {
+                                                                outputlog(""+r); //Print output to console
+                                                            }
+
+                                                            return funcCall;
+                                                        });
+                var curExp = new Racket.SExp(this.exp[this.expState], this.namespace, innerCC);
+                return curExp;
+            }
+        }
+        return beginSExp;
     }
     keywords["require"] = new Racket.SpecialForm();
     keywords["require"].evalBody = function (syntaxStrTree, namespace) {
@@ -1831,6 +1869,17 @@ function populateStandardFunctions(namespace) {
             return null;
         }
     }
+    namespace["call-with-current-continuation"] = new Racket.Lambda(["fn"], new Racket.Exp(), namespace);
+    namespace["call-with-current-continuation"].evalBody = function(syntaxStrTreeArg, namespace,continuation) {
+        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Racket.Function) {
+            //var new Racket.Lambda(["result"]], new Racket.Exp(), namespace);
+            return new Racket.SExp([syntaxStrTreeArg[1],continuation],namespace);
+        } else  {
+            outputlog("call-with-current-continuation was not called with 1 argument.");
+            return null;
+        }
+    }
+    namespace["call/cc"] = namespace["call-with-current-continuation"];
     namespace["vector?"] = new Racket.Lambda(["vec"], new Racket.Exp(), namespace);
     namespace["vector?"].evalBody = function(syntaxStrTreeArg, namespace) {
         if (syntaxStrTreeArg.length === 2){
@@ -2539,7 +2588,7 @@ function parseStepExpBlocks (syntaxStrBlocks, namespace) {
 
         var exp = new Racket.SExp(syntaxStrBlocks[0],
                                     namespace,
-                                    new Racket.Continuation(
+                                    new Racket.Continuation(namespace,
                                         function(r) { return r; }));
         /*while(exp.type == "SExp") {
             console.log(exp);
