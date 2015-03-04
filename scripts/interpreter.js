@@ -11,6 +11,10 @@ var deletebutton;
 
 // ---------- SCHEME TYPE DECLARATIONS AND SETUP ----------
 
+/*Array.prototype.isArray =  function (o){
+    //return o.constructor === Array;
+    //return Object.prototype.toString.call(this) == '[object Array]';
+};*/
 
 // This solves all my problems with JS's prototypical inheritance :D
 function Namespace(inheritedNamespace, isTopLevel) {
@@ -24,11 +28,6 @@ function Namespace(inheritedNamespace, isTopLevel) {
     newNamespace["#isTopLevel"] = isTopLevel === true;
     // newNamespace["#moduleNamespaces"] is not defined here since it will overwrite, and I do not want overwrite
     // Rather, I want the prototypical nature of namespaces to provide lookup to parent namespace's ["#moduleNamespaces"]
-
-    /*if (inheritedNamespace === libraryNamespace) {
-        newNamespace["#moduleNamespaces"] = {};
-        newNamespace["#moduleNamespaces"]["#moduleProvide"] = {};
-    }*/
 
     // make the container #moduleProvide inside #moduleNamespaces
     newNamespace["#thisModuleProvide"] = {}; //list of module provided id's
@@ -45,20 +44,23 @@ var uploadedModulesRawText = {};
 var uploadedModulesParsed = {};
 
 var Racket = {};
+var aggressiveOptimization = false;
 
 Racket.Exp = function () {
 };
 Racket.SpecialForm = function () {
     this.type = "SpecialForm";
-    this.eval = function (syntaxStrTreeArg, namespace, continuation) {
-        continuation = continuation || new Racket.Continuation(namespace); // I WILL GET RID OF THIS LATER
-        var result = this.evalBody(syntaxStrTreeArg,namespace, continuation);
-        if (result.type === "SExp") {
-            result.continuation = continuation;
-            return result;
-        }
-        return continuation.eval([continuation, result/*.evalFinal()*/], namespace, continuation);
+    this.eval = Racket.SpecialForm.eval;
+    this.toString = function() { return "\#\<macro\>"; };
+};
+Racket.SpecialForm.eval = function (syntaxStrTreeArg, namespace, continuation) {
+    continuation = continuation || new Racket.Continuation(namespace); // I WILL GET RID OF THIS LATER
+    var result = this.evalBody(syntaxStrTreeArg,namespace, continuation);
+    if (result.type === "SExp") {
+        result.continuation = continuation;
+        return result;
     }
+    return continuation.eval([continuation, result], namespace, continuation);
 };
 Racket.Type = function() {
     this.eval = function() { return this; } ;
@@ -169,7 +171,7 @@ Racket.Lambda = function (ids, body, namespace) {
     if (ids ==null || body ==null || namespace ==null)
         return null;
 
-    if (Array.isArray(ids)) {
+    if (ids.constructor === Array) {
         this.minParamCount = ids.length;
         this.hasRestArgument = false;
         var restDot = ids.indexOf(".");
@@ -196,34 +198,36 @@ Racket.Lambda = function (ids, body, namespace) {
     else
         this.body = body[0];
     this.inheritedNamespace = namespace;
-    this.eval = function (syntaxStrTreeArg, namespace, continuation) {
-        continuation = continuation || new Racket.Continuation(namespace); // I WILL GET RID OF THIS LATER
-        var result = this.evalBody(syntaxStrTreeArg,namespace,continuation); // usually the third parameter is not used
-        if (result.type === "SExp") {
-            result.continuation = continuation;
-            return result;
-        }
-        return continuation.eval([continuation, result/*.evalFinal()*/], namespace, continuation);
+    this.eval = Racket.Lambda.eval;
+    this.evalBody = Racket.Lambda.evalBody;
+};
+Racket.Lambda.eval = function (syntaxStrTreeArg, namespace, continuation) {
+    continuation = continuation || new Racket.Continuation(namespace); // I WILL GET RID OF THIS LATER
+    var result = this.evalBody(syntaxStrTreeArg,namespace,continuation); // usually the third parameter is not used
+    if (result.type === "SExp") {
+        result.continuation = continuation;
+        return result;
     }
-    this.evalBody = function (syntaxStrTreeArg, namespace) {
-        var lambdaNamespace = Namespace(this.inheritedNamespace);
-        var paramCount = syntaxStrTreeArg.length -1;
-        if (paramCount == this.minParamCount
-        || (paramCount >= this.minParamCount && this.hasRestArgument)) {
-            for (var i=0; i< this.minParamCount; ++i) {
-                lambdaNamespace[this.ids[i]]=syntaxStrTreeArg[i+1];
-            }
-            if (this.hasRestArgument) {
-                var listMake = ["list"].concat(syntaxStrTreeArg.slice(this.minParamCount+1));
-                lambdaNamespace[this.restArg] = new Racket.SExp(listMake,lambdaNamespace).evalFinal();
-            }
-            return new Racket.SExp(this.body, lambdaNamespace);
-
-        } else {
-            outputlog("Function parameter count mismatch.");
-            return null;
+    return continuation.eval([continuation, result], namespace, continuation);
+};
+Racket.Lambda.evalBody = function (syntaxStrTreeArg, namespace) {
+    var lambdaNamespace = Namespace(this.inheritedNamespace);
+    var paramCount = syntaxStrTreeArg.length -1;
+    if (paramCount == this.minParamCount
+    || (paramCount >= this.minParamCount && this.hasRestArgument)) {
+        for (var i=0; i< this.minParamCount; ++i) {
+            lambdaNamespace[this.ids[i]]=syntaxStrTreeArg[i+1];
         }
-    };
+        if (this.hasRestArgument) {
+            var listMake = ["list"].concat(syntaxStrTreeArg.slice(this.minParamCount+1));
+            lambdaNamespace[this.restArg] = new Racket.SExp(listMake,lambdaNamespace).evalFinal();
+        }
+        return new Racket.SExp(this.body, lambdaNamespace);
+
+    } else {
+        outputlog("Function parameter count mismatch.");
+        return null;
+    }
 };
 Racket.CaseLambda = function (body, namespace) {
     // body is an [[ids body], ...] where each element is a valid new Lambda(ids, body, namespace)
@@ -238,7 +242,7 @@ Racket.CaseLambda = function (body, namespace) {
             var minParamCount;
             var hasRestArgument;
             var restArg;
-            if (Array.isArray(this.caseBody[i][0])) { //list of ids
+            if (this.caseBody[i][0].constructor === Array) { //list of ids
                 var restDot = this.caseBody[i][0].indexOf(".");
                 if (restDot!== -1 && restDot + 2 === this.caseBody[i][0].length) {
                     hasRestArgument = true;
@@ -299,95 +303,109 @@ Racket.SExp = function(exp, namespace, continuation) { // This is a wrapper for 
     this.namespace = namespace;
     this.continuation = continuation || new Racket.Continuation(namespace); // shouldn't have to be here, will clean up later
     this.callName=null;
-    this.evalFinal = function() {
-        var sexp = this;
-        var count = 0;
-        while(sexp.type === "SExp"){
-            sexp = sexp.eval();
-            count++;
-        }
-        return sexp;
-    }
+    this.evalFinal = Racket.SExp.evalFinal;
     //this.eval is defined below to optimize;
     this.eval = Racket.SExp.eval;
 };
-
+Racket.SExp.evalFinal = function() {
+    var sexp = this;
+    var count = 0;
+    while(sexp.type === "SExp"){
+        sexp = sexp.eval();
+        count++;
+    }
+    return sexp;
+};
 Racket.SExp.eval = function(){
-    if (Array.isArray(this.exp)) {
-        if (this.expState >= this.exp.length) {
-            if (this.callName !=null){
-                // Search up namespace
-                // returns new SExp with transplanted namespace
-                // callName is blanked
-
-                // Aggressive tail-call namespace optimization that I'm not certain is safe but will try anyways.
-                // This is on by default.
-                // This would help reduce nesting of namespaces by forcefully going to a parent namespace
-                // If the function is accessed by id, (presumably meaning it is not a temporary lambda), then
-                // fnName would be a string (id) and tail recursion would occur
-                // Also, it cannot be a special form, so this checks for that too
-                if (aggressiveOptimization){
-
-                    // Then proceeds to find the deepest namespace that has this as defined function that is identical
-                    // Also makes sure deepest namespace reached is not the library of functions namespace
-                    var searchNamespace = this.namespace;
-                    var fnName = this.callName;
-                    var lookupExp = this.exp[0];
-                    var parentNamespace = searchNamespace["#upperNamespace"];
-                    while (parentNamespace[fnName] === lookupExp && parentNamespace !== libraryNamespace){
-                        searchNamespace = parentNamespace;
-                        parentNamespace = searchNamespace["#upperNamespace"];
-                    }
-                    this.namespace = searchNamespace;
-                }
-            }
-            return this.exp[0].eval(this.exp,this.namespace,this.continuation);
-
-        } else { //if (expState < exp.length){}
-            if (this.expState === 0) {
-                var fnName = this.exp[0];
-                if (typeof fnName == 'string' || fnName instanceof String) {
-                    this.callName=fnName;
-                }
-            } else if (this.expState === 1){
-                if (this.exp[0].type === "SpecialForm"){
-                    // leave
-                    return this.exp[0].eval(this.exp,this.namespace,this.continuation);
-                } else if (!(this.exp[0] instanceof Racket.Function)) {
-                    //error
-                }
-            }
-
-            var expState = this.expState;
-            var newExp=[];
-            for (var i=0; i< this.exp.length; ++i) {
-                if (i != expState){
-                    newExp[i]=this.exp[i];
-                }
-            }
-            var origCC = this.continuation;
-            var origName = this.callName;
-            var origNamespace = this.namespace;
-            var innerCC = new Racket.Continuation(origNamespace,
-                                function(r,n){  var cExp = newExp;
-                                                cExp[expState]=r;
-                                                var funcCall = new Racket.SExp(cExp,origNamespace,origCC);
-                                                funcCall.expState = expState+1;
-                                                funcCall.callName = origName;
-                                                return funcCall; });
-
-            var next = new Racket.SExp(this.exp[this.expState],this.namespace,innerCC);
-            return next;
-
-        }
-        // function evaluation will return continuation.eval(), which produces a FunctionCall obj
-
-    } else {
+    if (this.exp.constructor !== Array) {
         var lookupResult = parseLookupType(this.exp, this.namespace);
         return this.continuation.eval([this.continuation, lookupResult],this.namespace,this.continuation);
-    }
-};
+    } 
 
+    if (this.expState >= this.exp.length) {
+        if (this.callName !=null){
+            // Search up namespace
+            // returns new SExp with transplanted namespace
+            // callName is blanked
+
+            // Aggressive tail-call namespace optimization that I'm not certain is safe but will try anyways.
+            // This is on by default.
+            // This would help reduce nesting of namespaces by forcefully going to a parent namespace
+            // If the function is accessed by id, (presumably meaning it is not a temporary lambda), then
+            // fnName would be a string (id) and tail recursion would occur
+            // Also, it cannot be a special form, so this checks for that too
+            if (aggressiveOptimization){
+
+                // Then proceeds to find the deepest namespace that has this as defined function that is identical
+                // Also makes sure deepest namespace reached is not the library of functions namespace
+                var searchNamespace = this.namespace;
+                var fnName = this.callName;
+                var lookupExp = this.exp[0];
+                var parentNamespace = searchNamespace["#upperNamespace"];
+                while (parentNamespace[fnName] === lookupExp && parentNamespace !== libraryNamespace){
+                    searchNamespace = parentNamespace;
+                    parentNamespace = searchNamespace["#upperNamespace"];
+                }
+                this.namespace = searchNamespace;
+            }
+        }
+        var result = this.exp[0].eval(this.exp,this.namespace,this.continuation);
+        if (!result) {
+            outputlog((this.callName + " "|| "")+"Function evaluation error.")
+        }
+        return result;
+
+    } else { //if (expState < exp.length){}
+        if (this.expState === 0) {
+            var fnName = this.exp[0];
+            if (typeof fnName == 'string' || fnName instanceof String) {
+                this.callName=fnName;
+            }
+        } else if (this.expState === 1){
+            if (this.exp[0].type === "SpecialForm"){
+                // leave
+                return this.exp[0].eval(this.exp,this.namespace,this.continuation);
+            } else if (!(this.exp[0] instanceof Racket.Function)) {
+                //error
+                return this.continuation.eval([this.continuation, null],this.namespace,this.continuation);
+            }
+        }
+        // Skip making sub SExp if already Racket type
+        var nextExp = this.exp[this.expState];
+        if (nextExp && nextExp instanceof Racket.Type) {
+            var funcCall = new Racket.SExp(this.exp,this.namespace,this.continuation);
+            funcCall.expState = this.expState+1;
+            funcCall.callName = this.callName;
+            return funcCall;
+        }
+
+        var innerCC = new Racket.Continuation(this.namespace,true);
+        innerCC.origSExp = this;
+        innerCC.continuation = Racket.SExp.continuation;
+
+        var next = new Racket.SExp(this.exp[this.expState],this.namespace,innerCC);
+        return next;
+
+    }
+    // function evaluation will return continuation.eval(), which produces a FunctionCall obj
+
+};
+Racket.SExp.continuation = function(r,n) {
+    var origSExp = this.origSExp;
+    var cExp = [];
+    var expState = origSExp.expState;
+    for (var i=0; i<origSExp.exp.length; ++i) {
+        if (i != expState){
+            cExp[i]=origSExp.exp[i];
+        } else {
+            cExp[i]=r;
+        }
+    }
+    var funcCall = new Racket.SExp(cExp,origSExp.namespace,origSExp.continuation);
+    funcCall.expState = expState+1;
+    funcCall.callName = origSExp.callName;
+    return funcCall;
+};
 
 Racket.Continuation = function (namespace,continuation) {
     this.type = "Continuation";
@@ -395,31 +413,32 @@ Racket.Continuation = function (namespace,continuation) {
         return "\#\<continuation\>";
     }
     this.namespace = namespace;
-    this.continuation = continuation || function(r) { return r; };
+    this.continuation = continuation || Racket.Continuation.identity;
     this.ids = Object.keys(this.namespace); //getOwnPropertyNames can be used too, keys is better for smaller lists?
     this.obj = [];
     for (var i = 0; i< this.ids.length; ++i) {
         this.obj[i] = this.namespace[this.ids[i]];
     }
-    this.eval = function (exp,namespace,continuation) {
-        // Called like (cc result)
-        // var continuation is never used
-        // var namespace is never used
-        if (continuation != this) {
-            console.log("Swapping contexts for call ",exp," from ",continuation," to ",this);
-            var curId = Object.keys(this.namespace);
-            for (var i = 0; i< curId.length; ++i) { // clear current bound ids
-                this.namespace[curId[i]] = null;
-            }
-            for (var i = 0; i< this.ids.length; ++i) { // assign old bound ids
-                this.namespace[this.ids[i]] = this.obj[i];
-            }
+    this.eval = Racket.Continuation.eval;
+};
+Racket.Continuation.identity = function(r) { return r; };
+Racket.Continuation.eval = function (exp,namespace,continuation) {
+    // Called like (cc result)
+    // var continuation is never used
+    // var namespace is never used
+    if (continuation != this) {
+        console.log("Swapping contexts for call ",exp," from ",continuation," to ",this);
+        var curId = Object.keys(this.namespace);
+        for (var i = 0; i< curId.length; ++i) { // clear current bound ids
+            this.namespace[curId[i]] = null;
         }
-        return this.continuation(exp[1],this.namespace);
+        for (var i = 0; i< this.ids.length; ++i) { // assign old bound ids
+            this.namespace[this.ids[i]] = this.obj[i];
+        }
     }
-}
+    return this.continuation(exp[1],this.namespace);
+};
 
-Racket.SpecialForm.prototype = new Racket.Exp();
 Racket.Type.prototype = new Racket.Exp();
 Racket.Num.prototype = new Racket.Type();
 Racket.Str.prototype = new Racket.Type();
@@ -437,6 +456,7 @@ Racket.Vector.prototype = new Racket.Type();
 Racket.Void.prototype = new Racket.Type();
 
 Racket.SExp.prototype = new Racket.Exp();
+Racket.SpecialForm.prototype = new Racket.Function();
 Racket.Continuation.prototype = new Racket.Function();
 
 function populateSpecialForms() {
@@ -455,52 +475,63 @@ function populateSpecialForms() {
             return this.continuation.eval([this.continuation, result],this.namespace,this.continuation);*/
             var result = this.endingCallback(this);
             return result;
+        } 
 
-        } else {//if (this.expState < this.exp.length) {}
-            /*if (this.expState>0){
-                this.postEachEvalCallback(this,this.expState-1);
-            }*/
-            //this.preEachEvalCallback && this.preEachEvalCallback(this);
+        //if (this.expState < this.exp.length) {}
+        /*if (this.expState>0){
+            this.postEachEvalCallback(this,this.expState-1);
+        }*/
+        //this.preEachEvalCallback && this.preEachEvalCallback(this);
 
-            var expState = this.expState;
-            var origNamespace = this.namespace;
-            var origCC = this.continuation;
-            var origExp = this.exp;
-            var origEval = this.eval;
-            var origName = this.callName;
-            var origExpData = this.expData;
-            var origEndingCallback = this.endingCallback;
-            var origResultCallback = this.resultCallback;
-            var origPostEachEvalCallback = this.postEachEvalCallback;
-            //var origPreEachEvalCallback = this.preEachEvalCallback;
-            var origSExp = this;
-            var newExp=[];
-            for (var i=0; i< this.exp.length; ++i) {
-                if (i != expState){
-                    newExp[i]=this.exp[i];
-                }
-            }
-            var innerCC = new Racket.Continuation(
-                                origNamespace,
-                                function(r,n) { var cExp = newExp;
-                                                cExp[expState]=r;
-                                                var funcCall = new Racket.SExp(cExp,origNamespace,origCC);
-                                                funcCall.eval = origEval;
-                                                funcCall.expState = expState+1;
-                                                funcCall.callName = origName;
-                                                funcCall.expData = origExpData;
-                                                funcCall.endingCallback = origEndingCallback;
-                                                funcCall.resultCallback = origResultCallback;
-                                                //funcCall.preEachEvalCallback = origPreEachEvalCallback;
-                                                funcCall.postEachEvalCallback = origPostEachEvalCallback;
+        // Skip making sub SExp if already Racket type
+        var nextExp = this.exp[this.expState];
+        if (nextExp && nextExp instanceof Racket.Type) {
+            var funcCall = new Racket.SExp(this.exp,this.namespace,this.continuation);
+            funcCall.eval = this.eval;
+            funcCall.expState = this.expState+1;
+            funcCall.callName = this.callName;
+            funcCall.expData = this.expData;
+            funcCall.endingCallback = this.endingCallback;
+            funcCall.resultCallback = this.resultCallback;
+            //funcCall.preEachEvalCallback = origSExp.preEachEvalCallback;
+            funcCall.postEachEvalCallback = this.postEachEvalCallback;
 
-                                                funcCall = funcCall.postEachEvalCallback(funcCall,expState) || funcCall;
-
-                                                return funcCall;
-                                            });
-            var curExp = new Racket.SExp(this.exp[this.expState], this.namespace, innerCC);
-            return curExp;
+            funcCall = funcCall.postEachEvalCallback(funcCall,this.expState) || funcCall;
+            return funcCall;
         }
+
+        var innerCC = new Racket.Continuation(this.namespace,true);
+        innerCC.origSExp = this;
+        innerCC.continuation = SpecialForms.inherit.continuation; // see below
+
+        var curExp = new Racket.SExp(this.exp[this.expState], this.namespace, innerCC);
+        return curExp;
+        
+    };
+    SpecialForms.inherit.continuation = function(r,n) {
+        var origSExp = this.origSExp;
+        var cExp = [];
+        var expState = origSExp.expState;
+        for (var i=0; i< origSExp.exp.length; ++i) {
+            if (i != expState){
+                cExp[i]=origSExp.exp[i];
+            } else {
+                cExp[i]=r;
+            }
+        }
+        var funcCall = new Racket.SExp(cExp,origSExp.namespace,origSExp.continuation);
+        funcCall.eval = origSExp.eval;
+        funcCall.expState = expState+1;
+        funcCall.callName = origSExp.callName;
+        funcCall.expData = origSExp.expData;
+        funcCall.endingCallback = origSExp.endingCallback;
+        funcCall.resultCallback = origSExp.resultCallback;
+        //funcCall.preEachEvalCallback = origSExp.preEachEvalCallback;
+        funcCall.postEachEvalCallback = origSExp.postEachEvalCallback;
+
+        funcCall = funcCall.postEachEvalCallback(funcCall,origSExp.expState) || funcCall;
+
+        return funcCall;
     };
     keywords["true"] = new Racket.Bool(true);
     keywords["false"] = new Racket.Bool(false);
@@ -517,14 +548,13 @@ function populateSpecialForms() {
         andSExp.callName = "and";
         andSExp.eval = SpecialForms.inherit.eval; // defined above for optimization
         andSExp.resultCallback = function(self) {
-            return self.exp[0] || new Racket.Bool(true);
+            //return last exp if everything is truthy
+            return self.exp[self.exp.length-1] || new Racket.Bool(true); 
         };
         andSExp.endingCallback = SpecialForms.inherit.endingCallback;
         andSExp.postEachEvalCallback = function(self,i){
             if (self.exp[i] && self.exp[i].type === "Bool" && !(self.exp[i].value)){ // not null and false boolean
-                self.exp = [new Racket.Bool(false)];
-            } else if (i === self.exp.length-1){ //return last exp if everything is truthy
-                self.exp = [self.exp[i]];
+                return new Racket.SExp(new Racket.Bool(false),self.namespace,self.continuation);
             }
             return self;
         };
@@ -541,13 +571,13 @@ function populateSpecialForms() {
         orSExp.callName = "or";
         orSExp.eval = SpecialForms.inherit.eval; // defined above for optimization
         orSExp.resultCallback = function(self) {
-            return self.exp[0] || new Racket.Bool(false);
+            return self.exp[self.exp.length-1];
         };
         orSExp.endingCallback = SpecialForms.inherit.endingCallback;
         orSExp.postEachEvalCallback = function(self,i){
             if (self.exp[i] && self.exp[i].type === "Bool" && !(self.exp[i].value)){ // not null and false boolean
             } else { //true! short curcuit
-                self.exp = [self.exp[i]];
+                return new Racket.SExp(self.exp[i],self.namespace,self.continuation);
             }
             return self;
         };
@@ -565,15 +595,15 @@ function populateSpecialForms() {
         var id;
         var body;
 
-        if (Array.isArray(syntaxStrTree[1])) { //function define
+        if (syntaxStrTree[1].constructor === Array) { //function define
             // define has currying constructs in-place
             // We need to handle that
-            // Streamlined currying support into main branch
+            // Streamlined currying support
 
             var argsArr = syntaxStrTree[1];
             var innerBody = syntaxStrTree.slice(2);
 
-            while (Array.isArray(argsArr[0])) { // Currying, since nested brackets (arrays)
+            while (argsArr[0].constructor === Array) { // Currying, since nested brackets (arrays)
                 var innerIds = argsArr.slice(1);
                 innerBody = [["lambda", innerIds].concat(innerBody)];
                 argsArr = argsArr[0];
@@ -746,11 +776,11 @@ function populateSpecialForms() {
 
         var localNamespace = Namespace(namespace);
         // make id's first
-        //syntaxStrTree[1].map(function(cur,i,arr) { if (cur[0].substring(0,6)==="define") {localNamespace[(Array.isArray(cur[1])?cur[1][0]:cur[1])]=null;} });
+        //syntaxStrTree[1].map(function(cur,i,arr) { if (cur[0].substring(0,6)==="define") {localNamespace[(cur[1].constructor === Array ?cur[1][0]:cur[1])]=null;} });
         for (var i=0; i< syntaxStrTree[1].length; ++i){
             var cur = syntaxStrTree[1][i];
             if (cur[0].substring(0,6)==="define") {
-                localNamespace[(Array.isArray(cur[1])?cur[1][0]:cur[1])]=null;
+                localNamespace[(cur[1].constructor === Array?cur[1][0]:cur[1])]=null;
             }
         }
 
@@ -782,7 +812,7 @@ function populateSpecialForms() {
         // in the form of :
         // (letrec ([id exp] [id exp] ...) ... body)
 
-        if (!syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && Array.isArray(cur) && cur.length ===2 ; }, true)) {
+        if (!syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && cur.constructor === Array && cur.length ===2 ; }, true)) {
             outputlog("letrec definitions not all id expression pairs");
             return null;
         }
@@ -819,14 +849,14 @@ function populateSpecialForms() {
         return letrecSExp;
     }
     keywords["let"] = new Racket.SpecialForm();
-    keywords["let"].evalBody = function (syntaxStrTree, namespace) {
+    keywords["let"].evalBody = function (syntaxStrTree, namespace, continuation) {
         //assert syntaxStrTree[0] === "local"
         // in the form of :
         // (let ([id exp] [id exp] ...) ... body)
 
 
         // Named let -> morph into letrec
-        if (!Array.isArray(syntaxStrTree[1])) {
+        if (!(syntaxStrTree[1].constructor === Array)) {
             var name = syntaxStrTree[1];
             var idArr = [];
             var initArr = [];
@@ -837,11 +867,11 @@ function populateSpecialForms() {
 
             var body = syntaxStrTree[3];
             var morphedLetrec = ["letrec",[[name, ["lambda", idArr, body]]], [name].concat(initArr)];
-            return new Racket.SExp(morphedLetrec,namespace);
+            return keywords["letrec"].evalBody(morphedLetrec,namespace, continuation);
         }
 
         // Regular let
-        if (!syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && Array.isArray(cur) && cur.length ===2 ; }, true)) {
+        if (!syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && cur.constructor === Array && cur.length ===2 ; }, true)) {
             outputlog("let definitions not all id expression pairs");
             return null;
         }
@@ -878,7 +908,7 @@ function populateSpecialForms() {
         // in the form of :
         // (let* ([id exp] [id exp] ...) ... body)
 
-        if (!syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && Array.isArray(cur) && cur.length ===2 ; }, true)) {
+        if (!syntaxStrTree[1].reduce(function(prev,cur,i,arr) { return prev && cur.constructor === Array && cur.length ===2 ; }, true)) {
             outputlog("let* definitions not all id expression pairs");
             return null;
         }
@@ -923,7 +953,7 @@ function populateSpecialForms() {
         return new Racket.CaseLambda(caseBody, namespace);
     }
     keywords["set!"] = new Racket.SpecialForm();
-    keywords["set!"].evalBody = function (syntaxStrTree, namespace) {
+    keywords["set!"].evalBody = function (syntaxStrTree, namespace, continuation) {
         //assert syntaxStrTree[0] === "set!"
         // in the form of :
         // (set! id exp)
@@ -946,8 +976,23 @@ function populateSpecialForms() {
                 outputlog("set! cannot mutate library id: "+id+".");
                 return null;
             } else {
-                setNamespace[id] = new Racket.SExp(body, namespace).evalFinal();
-                return new Racket.Void(); //no errors
+
+                var setSExp = new Racket.SExp(body,namespace,continuation);
+                setSExp.expState = 0;
+                setSExp.callName = "set!";
+                setSExp.expData = {};
+                setSExp.expData.id = id;
+                setSExp.expData.setNamespace = setNamespace;
+                setSExp.eval = SpecialForms.inherit.eval;
+                setSExp.endingCallback = SpecialForms.inherit.endingCallback;
+                setSExp.resultCallback = function(self){
+                    this.expData.setNamespace[this.expData.id] = this.exp[0];
+                    return new Racket.Void(); //no errors
+                }
+                setSExp.postEachEvalCallback = function(self,i){
+                    return self;
+                };
+                return setSExp;
             }
         } else { //should not have called set! at all
             outputlog("id "+id+" not found, cannot be set!");
@@ -955,69 +1000,95 @@ function populateSpecialForms() {
         }
     }
     keywords["cond"] = new Racket.SpecialForm();
-    keywords["cond"].evalBody = function (syntaxStrTree, namespace) {
+    keywords["cond"].evalBody = function (syntaxStrTree, namespace, continuation) {
         //assert syntaxStrTree[0] === "cond"
         // in the form of :
         // (cond (bool exp) (bool exp) ... (else exp))
 
-        if (Array.isArray(syntaxStrTree)) {
-            for (var i=1; i< syntaxStrTree.length; ++i) {
-                if (i === syntaxStrTree.length -1
-                    && ((syntaxStrTree[i].length>=2 && syntaxStrTree[i][0] === "else")
-                        || (syntaxStrTree[i].length===1))) { //handles when to add an implcit begin, but only when necessary
-                    if (syntaxStrTree[i][0] === "else") {
-                        if (syntaxStrTree[i].length ===2) {
-                            return new Racket.SExp(syntaxStrTree[i][1], namespace);
-                        } else
-                            return new Racket.SExp(["begin"].concat(syntaxStrTree[i].slice(1)), Namespace(namespace,true)); //gotta make it a new namespace
-                    } else {
-                        if (syntaxStrTree[i].length ===1) {
-                            return new Racket.SExp(syntaxStrTree[i][0], namespace);
-                        } else
-                            return new Racket.SExp(["begin"].concat(syntaxStrTree[i]), Namespace(namespace,true)); //gotta make it a new namespace
-                    }
-                } else {
-                    if (syntaxStrTree[i].length >= 2){
-                        var predicate = new Racket.SExp(syntaxStrTree[i][0], namespace).evalFinal();
-                        if (predicate && !(predicate.type === "Bool" && !predicate.value)) { //if not null and not false Racket.Bool
-                            if (syntaxStrTree[i].length>2)
-                                return new Racket.SExp(["begin"].concat(syntaxStrTree[i].slice(1)), Namespace(namespace,true)); //gotta make it a new namespace
-                            else
-                                return new Racket.SExp(syntaxStrTree[i][1], namespace);
-                        } //else {} //do nothing, go to next predicate
-                    }
-                }
-            }
-            // Should have exited by now
-            outputlog("No else condition was found.");
-            return null;
-        } else {
+        if (syntaxStrTree.constructor !== Array) {
             outputlog("cond conditions are invalid.");
             return null;
         }
+
+        var predicateExps = [];
+        //var produce = [];
+        for (var i=1; i < syntaxStrTree.length; ++i) {
+            predicateExps[i-1] = syntaxStrTree[i][0];
+            if (predicateExps[i-1] === "else") {
+                predicateExps[i-1] = new Racket.Bool(true);
+            }
+            //produce[i-1] = syntaxStrTree[i].slice(1);
+        }
+
+        var condSExp = new Racket.SExp(predicateExps,namespace,continuation);
+        condSExp.expState = 0;
+        condSExp.callName = "cond";
+        condSExp.expData = {};
+        condSExp.expData.entireExp = syntaxStrTree;
+        condSExp.eval = SpecialForms.inherit.eval;
+        condSExp.endingCallback = SpecialForms.inherit.endingCallback;
+        condSExp.resultCallback = function(self){
+            // Should have exited by now
+            // No else condition was found.
+            return new Racket.Void(); //cond produced nothing
+        }
+        condSExp.postEachEvalCallback = function(self,i){
+            var predicate = self.exp[i];
+            if (predicate && !(predicate.type === "Bool" && !predicate.value)) { //if not null and not false Racket.Bool
+                var branch = self.expData.entireExp[1+i].slice(1);
+                var nmsp = self.namespace;
+                if (branch.length ===0) {
+                    branch = new Racket.Void();
+                } else if (branch.length ===1) {
+                    branch = branch[0];
+                } else { //handles when to add an implcit begin, but only when necessary
+                    branch = ["begin"].concat(branch);
+                    nmsp = Namespace(nmsp,true); //gotta make it a new namespace
+                }
+                return new Racket.SExp(branch,nmsp,self.continuation);
+            } //else {} //do nothing, go to next predicate
+            return self;
+        };
+        return condSExp;
     }
     keywords["if"] = new Racket.SpecialForm();
-    keywords["if"].evalBody = function (syntaxStrTree, namespace) {
+    keywords["if"].evalBody = function (syntaxStrTree, namespace, continuation) {
         //assert syntaxStrTree[0] === "if"
         // in the form of :
         // (if predicate? true-exp false-exp))
-
-        if (Array.isArray(syntaxStrTree) && syntaxStrTree.length===4) {
-            var predicate = new Racket.SExp(syntaxStrTree[1], namespace).evalFinal();
-            if (predicate) { // if not null
-                if (!(predicate.type==="Bool" && !predicate.value)) { //if not false Racket.Bool
-                    return new Racket.SExp(syntaxStrTree[2], namespace);
-                } else {
-                    return new Racket.SExp(syntaxStrTree[3], namespace);
-                }
-            } else {
-                outputlog("if predicate evaluation gave error.")
-                return null;
-            }
-        } else {
+    
+        if (syntaxStrTree.constructor !== Array || syntaxStrTree.length !==4) {
             outputlog("if is invalid or does not have 3 arguments.");
             return null;
         }
+
+        var ifSExp = new Racket.SExp([syntaxStrTree[1]],namespace,continuation);
+        ifSExp.expState = 0;
+        ifSExp.callName = "if";
+        ifSExp.expData = {};
+        ifSExp.expData.path = syntaxStrTree;
+        ifSExp.eval = SpecialForms.inherit.eval;
+        ifSExp.endingCallback = SpecialForms.inherit.endingCallback;
+        ifSExp.resultCallback = function(self){
+            // Should have exited by now
+            // No else condition was found.
+            return new Racket.Void(); //cond produced nothing
+        }
+        ifSExp.postEachEvalCallback = function(self,i){
+            var predicate = self.exp[0];
+            if (!predicate) {
+                outputlog("if predicate evaluation gave error.")
+                return null;
+            }
+            var ifExp = self.expData.path;
+            if (!(predicate.type==="Bool" && !predicate.value)) { //if not null and not false Racket.Bool
+                return new Racket.SExp(ifExp[2],self.namespace,self.continuation);
+            } else {
+                return new Racket.SExp(ifExp[3],self.namespace,self.continuation);
+            } 
+            return self;
+        };
+        return ifSExp;
     }
     keywords["when"] = new Racket.SpecialForm();
     keywords["when"].evalBody = function (syntaxStrTree, namespace) {
@@ -1025,7 +1096,7 @@ function populateSpecialForms() {
         // in the form of :
         // (when predicate? ... true-final-exp))
 
-        if (Array.isArray(syntaxStrTree) && syntaxStrTree.length >= 3) {
+        if (syntaxStrTree.constructor === Array && syntaxStrTree.length >= 3) {
             var predicate = new Racket.SExp(syntaxStrTree[1], namespace).evalFinal();
             if (predicate) { // if not null
                 if (!(predicate.type==="Bool" && !predicate.value)) { //if not false Racket.Bool
@@ -1051,7 +1122,7 @@ function populateSpecialForms() {
         // in the form of :
         // (unless predicate? ... false-final-exp))
 
-        if (Array.isArray(syntaxStrTree) && syntaxStrTree.length >= 3) {
+        if (syntaxStrTree.constructor === Array && syntaxStrTree.length >= 3) {
             var predicate = new Racket.SExp(syntaxStrTree[1], namespace).evalFinal();
             if (predicate) { // if not null
                 if ((predicate.type==="Bool" && !predicate.value)) { //if not false Racket.Bool
@@ -1091,17 +1162,33 @@ function populateSpecialForms() {
         };
         beginSExp.endingCallback = SpecialForms.inherit.endingCallback;
         beginSExp.postEachEvalCallback = function(self,i){
-            // Expression is simplest form outputs are spliced to surrounding context
-            //   meaning result is made output
-            if (i !== self.exp.length-1) {
-                var r = self.exp[i];
-                if (self.namespace === globalNamespace && r && r !== true && r.type !== "Void") {
-                    outputlog(""+r); //Print output to console
-                }
-            }
             return self;
         };
         return beginSExp;
+    }
+    keywords["begin0"] = new Racket.SpecialForm();
+    keywords["begin0"].evalBody = function (syntaxStrTree, namespace, continuation) {
+        //assert syntaxStrTree[0] === "begin"
+        // in the form of :
+        // (begin first-exp ... exp)
+
+        var begin0Namespace = (namespace["#isTopLevel"]?namespace:Namespace(namespace, true));
+        var exp = [];
+        for (var i=1; i<syntaxStrTree.length; ++i) {
+            exp[i-1] = syntaxStrTree[i];
+        }
+        var begin0SExp = new Racket.SExp(exp,begin0Namespace,continuation);
+        begin0SExp.expState = 0;
+        begin0SExp.callName = "begin";
+        begin0SExp.eval = SpecialForms.inherit.eval;
+        begin0SExp.resultCallback = function(self){
+            return self.exp[0];
+        };
+        begin0SExp.endingCallback = SpecialForms.inherit.endingCallback;
+        begin0SExp.postEachEvalCallback = function(self,i){
+            return self;
+        };
+        return begin0SExp;
     }
     keywords["require"] = new Racket.SpecialForm();
     keywords["require"].evalBody = function (syntaxStrTree, namespace) {
@@ -2191,7 +2278,9 @@ function prep() {
         deletemenu.remove(deletemenu.selectedIndex);
     }
     filesubmit.onclick = function(){};
-    submitbutton.onclick=evaluate;
+    submitbutton.onclick=function(){
+        var result = evaluate(textfield.value);
+    };
     textfield.onkeyup = automaticIndent;
     clearbutton.onclick = function () { outputfield.value = ""; };
     // Setup upload functionality
@@ -2203,6 +2292,7 @@ function prep() {
 
 function outputlog(str) {
     outputfield.value += str+"\n";
+    outputfield.scrollTop = outputfield.scrollHeight;
     //console.log("Logged: "+str);
 };
 var setCaretPos;
@@ -2536,13 +2626,14 @@ function tokenize(input) {
 function importCode(str){
     var temp = textfield.value;
     textfield.value = str;
-    evaluate();
+    var result = evaluate(str);
     textfield.value = temp;
+    return result;
 };
 
-function evaluate() {
+function evaluate(str) {
     if (readyForUser || libraryLoadMode) {
-        var rawCode = textfield.value;
+        var rawCode = str;
         var tokenizedInput = tokenize(rawCode);
 
         console.log(tokenizedInput);
@@ -2576,8 +2667,8 @@ function evaluate() {
             stepExp = parseStepExpBlocks(stepExp, namespace);
         }
         var end = new Date();
-        outputlog("Execution completed in: "+(end-start)+" ms.");
-
+        outputlog("\n> Execution completed in: "+(end-start)+" ms.");
+        return outputfield.value;
     }
 };
 
@@ -2695,14 +2786,19 @@ function produceCodeBlocks(tokens){
     }
     return block;
 }
-
 function parseStepExpBlocks (syntaxStrBlocks, namespace) {
     if (syntaxStrBlocks.length > 0) {
+        while (syntaxStrBlocks.constructor === Array && syntaxStrBlocks[0][0] === "begin") {
+            syntaxStrBlocks = syntaxStrBlocks[0].slice(1).concat(syntaxStrBlocks.slice(1));
+        }; // fix for (begins lifting to globalNamespace)
+        // Expression inside begin in simplest form outputs are spliced to surrounding context
+        //  meaning result is made output (only if namespace === globalNamespace)
+
 
         var exp = new Racket.SExp(syntaxStrBlocks[0],
                                     namespace,
                                     new Racket.Continuation(namespace,
-                                        function(r) { return r; }));
+                                        Racket.Continuation.identity));
         /*while(exp.type == "SExp") {
             console.log(exp);
             exp = exp.eval();
@@ -2725,9 +2821,11 @@ function parseStepExpBlocks (syntaxStrBlocks, namespace) {
 function parseLookupType(expression,namespace) {
     //console.log("Tried parsing: "+ expression);
     //console.log(namespace);
-    if (expression instanceof Racket.Exp || expression === null)
+    if (expression instanceof Racket.Type || expression === null)
         //replaced (expression instanceof Racket.Type || expression instanceof Racket.SExp) for now
         return expression;
+    else if (!isNaN(Number(expression)))
+        return new Racket.Num(Number(expression));
     else if (expression[0]==="\"" && expression[expression.length-1]==="\"")
         return new Racket.Str(expression.substring(1,expression.length-1));
     else if (expression[0]==="\'" && expression.length>1)
@@ -2736,8 +2834,6 @@ function parseLookupType(expression,namespace) {
         return new Racket.Char(expression.substring(2));
     else if (expression[0]==="\#" && expression.length==2)
         return new Racket.Bool(expression==="\#t");
-    else if (!isNaN(Number(expression)))
-        return new Racket.Num(Number(expression));
     else if (specialForms[expression]) {
         //console.log("Looked up special form: "+  expression);
         return specialForms[expression];
@@ -2753,103 +2849,4 @@ function parseLookupType(expression,namespace) {
         outputlog("Unknown type: "+expression);
         return null;
     }
-}
-var aggressiveOptimization = true;
-function parseExpTree (syntaxStrTree, namespace) {
-    do {
-        // This will not loop forever, it exits when null is encountered
-        // The loop is to facilitate tail-optimization with SExp Objects
-        // As such, it continues when evaluation encounters one.
-
-        if (Array.isArray(syntaxStrTree)) {
-
-            var lookupExp; // Expression to call, whether it is special form or function
-            lookupExp = parseExpTree(syntaxStrTree[0],namespace);
-
-            //evaluate function if lookup was successful
-            if (lookupExp) {
-                var result;
-                var evalExp;
-                var evalNamespace;
-                if (lookupExp.type === "SpecialForm") {//if special form, do not evaluate arguments
-                    // Do nothing
-                    //result =  lookupExp.eval(syntaxStrTree, namespace);
-                    evalExp = syntaxStrTree;
-                    evalNamespace = namespace;
-                } else if (lookupExp.type === "Lambda"){
-                    // For functions:
-                    // evaluate the function call arguments first
-                    var evaluatedSyntaxStrTree = new Array(syntaxStrTree.length);
-                    evaluatedSyntaxStrTree[0] = syntaxStrTree[0];
-                    var argEvalSuccess = true;
-                    for (var i = 1; i< syntaxStrTree.length; ++i) {
-                        evaluatedSyntaxStrTree[i] = parseExpTree(syntaxStrTree[i],namespace);
-                        argEvalSuccess = argEvalSuccess && (evaluatedSyntaxStrTree[i] instanceof Racket.Type);
-                    }
-                    if (!argEvalSuccess){ // Check if it was successful in producing Racket.Types for the arguments
-                        outputlog(""+ syntaxStrTree[0]+ " function call arguments were not all Typed");
-                        //console.log(evaluatedSyntaxStrTree);
-                        return null;
-                    } else {
-                        evalExp = evaluatedSyntaxStrTree;
-                        evalNamespace = namespace;
-                        //result = lookupExp.eval(evaluatedSyntaxStrTree,namespace);
-                    }
-                } else if (lookupExp.type !== "Lambda") { // Should have been a function
-                    outputlog(syntaxStrTree[0]+" is not a function.");
-                    return null;
-                }
-
-                //Aggressive tail-call namespace optimization that I'm not certain is safe but will try anyways.
-                // This is on by default.
-                // This would help reduce nesting of namespaces by forcefully going to a parent namespace
-                var fnName = syntaxStrTree[0];
-                // If the function is accessed by id, (presumably meaning it is not a temporary lambda), then
-                // fnName would be a string (id) and tail recursion would occur
-                // Also, it cannot be a special form, so this checks for that too
-                if (aggressiveOptimization && (typeof fnName == 'string' || fnName instanceof String) && !specialForms[fnName] /*&& !evalNamespace.hasOwnProperty(fnName)*/){
-                    //console.log(fnName);
-
-                    // Then proceeds to find the deepest namespace that has this as defined function that is identical
-                    // Also makes sure deepest namespace reached is not the library of functions namespace
-                    var searchNamespace = evalNamespace;
-
-                    var parentNamespace = searchNamespace["#upperNamespace"];
-                    while (parentNamespace[fnName] === lookupExp && parentNamespace !== libraryNamespace){
-                        searchNamespace = parentNamespace;
-                        parentNamespace = searchNamespace["#upperNamespace"];
-                    }
-                    evalNamespace = searchNamespace;
-                }
-
-                // Evaluate function/special form call
-                result =  lookupExp.eval(evalExp, evalNamespace);
-
-                if (result) {
-                    if (result.type === "SExp"){
-                        var exps = result.exp;
-                        var nmsp = result.namespace;
-
-                        syntaxStrTree = exps;
-                        namespace = nmsp;
-                        continue;
-                    }
-                    else {
-                        // Not SExp (tail-recursion) object? Must mean regular Racket.Type is the result
-                        return result;
-                    }
-                } else {
-                    var type = (lookupExp.type === "SpecialForm"? "Special form: " : "Function or Lambda: ");
-                    outputlog(type+syntaxStrTree[0]+" evaluation returned error");
-                    return null;
-                }
-            } else {
-                outputlog("Descriptor not found: "+syntaxStrTree[0]);
-                return null;
-            }
-        } else {
-            return parseLookupType(syntaxStrTree, namespace);
-        }
-
-    } while(true);
 }
