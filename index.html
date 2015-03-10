@@ -2,30 +2,30 @@
 <html lang="en">
     <head>
         <meta charset="utf-8"/>
-        
+
         <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
-        <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+        <!--<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>-->
         <!-- Latest compiled and minified CSS -->
         <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css">
         <!-- Optional theme -->
         <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap-theme.min.css">
         <!-- Latest compiled and minified JavaScript -->
-        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/js/bootstrap.min.js"></script>
+        <!--<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/js/bootstrap.min.js"></script>-->
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        
+
         <a href="https://github.com/kyewei/dr-racket-script">
-            <img style="position: absolute; top: 0; right: 0; border: 0;" 
-                 src="https://camo.githubusercontent.com/38ef81f8aca64bb9a64448d0d70f1308ef5341ab/68747470733a2f2f73332e616d617a6f6e6177732e636f6d2f6769746875622f726962626f6e732f666f726b6d655f72696768745f6461726b626c75655f3132313632312e706e67" 
-                 alt="Fork me on GitHub" 
+            <img style="position: absolute; top: 0; right: 0; border: 0;"
+                 src="https://camo.githubusercontent.com/38ef81f8aca64bb9a64448d0d70f1308ef5341ab/68747470733a2f2f73332e616d617a6f6e6177732e636f6d2f6769746875622f726962626f6e732f666f726b6d655f72696768745f6461726b626c75655f3132313632312e706e67"
+                 alt="Fork me on GitHub"
                  onload="this.width/=1.25;this.onload=null;"
                  data-canonical-src="https://s3.amazonaws.com/github/ribbons/forkme_right_darkblue_121621.png">
-        </a>        
-        
+        </a>
+
         <style>
         textarea {
             font-family:Consolas,Monaco,Lucida Console,Courier New, monospace;
         }
-        
+
         /* Upload box styling: http://www.abeautifulsite.net/whipping-file-inputs-into-shape-with-bootstrap-3/ */
         .btn-file {
             position: relative;
@@ -46,7 +46,7 @@
             cursor: inherit;
             display: block;
         }
-        
+
         </style>
     </head>
     <body>
@@ -66,17 +66,21 @@
                   autofocus></textarea>
         <p>
         Note: evaluated code does not persist.
-        <br>
-        <button type="button"
-                id="submit-button"
-                class="btn btn-primary">Submit</button>
-        <label class="checkbox-inline">
-            <input type="checkbox"
-                   id="auto-clear-checkbox"
-                   name="terms"
-                   checked/>
-                   Auto-Clear Console Output
-        </label>
+        <div class="form-inline">
+            <button type="button"
+                    id="re-indent-button"
+                    class="btn btn-primary">Re-Indent All</button>
+            <button type="button"
+                    id="submit-button"
+                    class="btn btn-primary">Submit</button>
+            <label class="checkbox-inline">
+                <input type="checkbox"
+                       id="auto-clear-checkbox"
+                       name="terms"
+                       checked/>
+                       Auto-Clear Console Output
+            </label>
+        </div>
         <br>
         <br>
         <h4>Console Output:</h4>
@@ -87,40 +91,36 @@
                   id="code-output"
                   readonly></textarea>
         <p>
-        <button type="button"
-                id="clear-button"
-                class="btn btn-primary">Clear</button>
+        <div class="form-inline">
+            <button type="button"
+                    id="clear-button"
+                    class="btn btn-primary">Clear</button>
+        </div>
         <br>
         <br>
+
         <h4>Upload Singleton Modules (File is parsed but not evaluated until it is needed):</h4>
-        <!--<input type="file"
-               id="file-upload"
-               class="btn btn-primary">-->
-        
-        <div class="input-group">
-            <span class="btn btn-default btn-file">
+        <div class="form-inline">
+            <span class="btn btn-primary btn-file">
                 Browse
                 <input type="file"
                        id="file-upload">
             </span>
             <input type="text" id="file-name" class="form-control" readonly>
+            <button type="button"
+                    id="file-upload-submit"
+                    class="btn btn-primary">Upload</button>
         </div>
-                
-        <button type="button"
-                id="file-upload-submit"
-                class="btn btn-primary">Upload</button>
-
         <br>
         <h4>Delete Uploaded Modules (This cannot be undone):</h4>
-        <div class="col-md-2 row">
-        <select id="delete-module-menu" 
-                class="form-control input-group">
-        </select></div>
-        <p>
-        <button type="button"
-                id="delete-button"
-                class="btn btn-danger">Delete Module</button>
-        <br>
+        <div class="form-inline">
+            <select id="delete-module-menu"
+                    class="form-control input-group">
+            </select>
+            <button type="button"
+                    id="delete-button"
+                    class="btn btn-danger">Delete Module</button>
+        </div>
         <br>
         Interested in the project, or want specific features to be added?
         Visit my <a href="http://github.com/kyewei/dr-racket-script">GitHub Repository</a>
@@ -128,7 +128,7 @@
         <br>
         <br>
         </div>
-        
+
         <script src="scripts/interpreter.js">
         </script>
     </body>
