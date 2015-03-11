@@ -373,6 +373,7 @@ Racket.Continuation.prototype.eval = function (exp,namespace,continuation) {
 };
 
 
+
 // ---------- S-EXPRESSIONS ----------
 Racket.SExp = function(exp, namespace, continuation) { // This is a wrapper for SExp as a Type.
     this.type="SExp";
@@ -388,9 +389,22 @@ Racket.SExp = function(exp, namespace, continuation) { // This is a wrapper for 
 Racket.SExp.prototype = new Racket.Exp();
 Racket.SExp.prototype.evalFinal = function() {
     var sexp = this;
-    while(sexp.type === "SExp"){
+
+    /*var toString = Array.prototype.toString;
+    Array.prototype.toString = function() {
+        return '\(' + this.join(' ') + '\)';
+    };*/
+
+    do {
+        /*if (sexp.exp.constructor === Array) {
+            console.log(sexp.exp.toString());
+        }*/
         sexp = sexp.eval();
-    }
+
+    } while (sexp.type === "SExp");
+
+    //Array.prototype.toString = toString;
+
     return sexp;
 };
 Racket.SExp.prototype.eval = function(){
@@ -580,6 +594,31 @@ function populateSpecialForms() {
 
         return funcCall;
     };
+    // Common callbacks that are cached
+    SpecialForms.resultCallback = {};
+    SpecialForms.resultCallback.returnVoid = function(self){ 
+        return new Racket.Void();
+    };
+    SpecialForms.resultCallback.returnLastExp = function(self){
+        return self.exp[self.exp.length-1];
+    };
+    SpecialForms.endingCallback = {};
+    SpecialForms.endingCallback.conditionalBeginBody = function(self) {
+        var body = self.expData.exp.slice(2);
+        var bodyexp = body.length>1?["begin"].concat(body):body[0];
+        return new Racket.SExp(bodyexp,Namespace(self.namespace),self.continuation);
+    };
+    SpecialForms.postEachEvalCallback = {};
+    SpecialForms.postEachEvalCallback.returnSelf = function(self,i) {
+        return self;
+    };
+    SpecialForms.postEachEvalCallback.returnSelfOrFail = function(self,i){
+        if (!self.exp[i]){
+            outputlog(self.callName+" definitions evaluation failed.");
+            self.exp = [null];
+        }
+        return self;
+    };
     keywords["true"] = new Racket.Bool(true);
     keywords["false"] = new Racket.Bool(false);
     keywords["empty"] = new Racket.Empty();
@@ -594,19 +633,17 @@ function populateSpecialForms() {
         andSExp.expState = 0;
         andSExp.callName = "and";
         andSExp.eval = SpecialForms.inherit.eval; // defined above for optimization
-        andSExp.resultCallback = function(self) {
-            //return last exp if everything is truthy
-            return self.exp[self.exp.length-1] || new Racket.Bool(true); 
-        };
+        andSExp.resultCallback = SpecialForms.resultCallback.returnLastExp;
         andSExp.endingCallback = SpecialForms.inherit.endingCallback;
-        andSExp.postEachEvalCallback = function(self,i){
-            if (self.exp[i] && self.exp[i].type === "Bool" && !(self.exp[i].value)){ // not null and false boolean
-                return self.continuation.eval([self.continuation, new Racket.Bool(false)],self.namespace,self.continuation);
-                //return new Racket.SExp(new Racket.Bool(false),self.namespace,self.continuation);
-            }
-            return self;
-        };
+        andSExp.postEachEvalCallback = keywords["and"].postEachEvalCallback;
         return andSExp;
+    };
+    keywords["and"].postEachEvalCallback = function(self,i){
+        if (self.exp[i] && self.exp[i].type === "Bool" && !(self.exp[i].value)){ // not null and false boolean
+            return self.continuation.eval([self.continuation, new Racket.Bool(false)],self.namespace,self.continuation);
+            //return new Racket.SExp(new Racket.Bool(false),self.namespace,self.continuation);
+        }
+        return self;
     };
     keywords["or"] = new Racket.SpecialForm();
     keywords["or"].evalBody = function(syntaxStrTree, namespace, continuation) {
@@ -618,19 +655,18 @@ function populateSpecialForms() {
         orSExp.expState = 0;
         orSExp.callName = "or";
         orSExp.eval = SpecialForms.inherit.eval; // defined above for optimization
-        orSExp.resultCallback = function(self) {
-            return self.exp[self.exp.length-1];
-        };
+        orSExp.resultCallback = SpecialForms.resultCallback.returnLastExp;
         orSExp.endingCallback = SpecialForms.inherit.endingCallback;
-        orSExp.postEachEvalCallback = function(self,i){
-            if (self.exp[i] && self.exp[i].type === "Bool" && !(self.exp[i].value)){ // not null and false boolean
-            } else { //true! short curcuit
-                return self.continuation.eval([self.continuation, self.exp[i]],self.namespace,self.continuation);
-                //return new Racket.SExp(self.exp[i],self.namespace,self.continuation);
-            }
-            return self;
-        };
+        orSExp.postEachEvalCallback = keywords["or"].postEachEvalCallback;
         return orSExp;
+    };
+    keywords["or"].postEachEvalCallback = function(self,i){
+        if (self.exp[i] && self.exp[i].type === "Bool" && !(self.exp[i].value)){ // not null and false boolean
+        } else { //true! short curcuit
+            return self.continuation.eval([self.continuation, self.exp[i]],self.namespace,self.continuation);
+            //return new Racket.SExp(self.exp[i],self.namespace,self.continuation);
+        }
+        return self;
     };
     keywords["define"] = new Racket.SpecialForm();
     keywords["define"].evalBody = function(syntaxStrTree, namespace, continuation) {
@@ -677,31 +713,30 @@ function populateSpecialForms() {
         defineSExp.expData = {};
         defineSExp.expData.id = id;
         defineSExp.eval = SpecialForms.inherit.eval; // defined above for optimization
-        defineSExp.resultCallback = function(self) {
-            var result;
-            var id = self.expData.id;
-            if (self.exp[0]) {
-                if (self.namespace["#upperNamespace"] === libraryNamespace && self.namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(id)) {
-                    outputlog("Imported modules contain id: "+id+".");
-                    result = false;
-                } else if ((!(self.namespace.hasOwnProperty(id))) || self.namespace[id] === null) {
-                    self.namespace[id] = self.exp[0];
-                    result = new Racket.Void(); //for no errors
-                } else {
-                    outputlog("Namespace already contains bound id: "+id+".");
-                    result = false;
-                }
+        defineSExp.resultCallback = keywords["define"].resultCallback;
+        defineSExp.endingCallback = SpecialForms.inherit.endingCallback;
+        defineSExp.postEachEvalCallback = SpecialForms.postEachEvalCallback.returnSelf;
+        return defineSExp;
+    };
+    keywords["define"].resultCallback = function(self) {
+        var result;
+        var id = self.expData.id;
+        if (self.exp[0]) {
+            if (self.namespace["#upperNamespace"] === libraryNamespace && self.namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(id)) {
+                outputlog("Imported modules contain id: "+id+".");
+                result = false;
+            } else if ((!(self.namespace.hasOwnProperty(id))) || self.namespace[id] === null) {
+                self.namespace[id] = self.exp[0];
+                result = new Racket.Void(); //for no errors
             } else {
-                outputlog("define body evaluation failed.");
+                outputlog("Namespace already contains bound id: "+id+".");
                 result = false;
             }
-            return result;
+        } else {
+            outputlog("define body evaluation failed.");
+            result = false;
         }
-        defineSExp.endingCallback = SpecialForms.inherit.endingCallback;
-        defineSExp.postEachEvalCallback = function(self,i){
-            return self;
-        };
-        return defineSExp;
+        return result;
     };
     keywords["define-struct"] = new Racket.SpecialForm();
     keywords["define-struct"].evalBody = function(syntaxStrTree, namespace) {
@@ -838,21 +873,12 @@ function populateSpecialForms() {
         localSExp.expState = 0;
         localSExp.callName = "local";
         localSExp.expData = {};
-        localSExp.expData.body = syntaxStrTree.slice(2);
+        localSExp.expData.exp = syntaxStrTree;
         localSExp.eval = SpecialForms.inherit.eval; // defined above for optimization
         // As the way I've written this, endingCallback will only be called at the end of definitions' evaluation
-        localSExp.endingCallback = function(self) {
-            var bodyexp = self.expData.body.length>1?["begin"].concat(self.expData.body):self.expData.body[0];
-            return new Racket.SExp(bodyexp,self.namespace,self.continuation);
-        };
+        localSExp.endingCallback = SpecialForms.endingCallback.conditionalBeginBody;
         // postEachEvalCallback is going to be called to evaluate all the defines
-        localSExp.postEachEvalCallback = function(self,i){
-            if (!self.exp[i]){
-                outputlog("local definitions evaluation failed.");
-                self.exp = [null];
-            }
-            return self;
-        };
+        localSExp.postEachEvalCallback = SpecialForms.postEachEvalCallback.returnSelfOrFail;
         return localSExp;
     }
     keywords["letrec"] = new Racket.SpecialForm();
@@ -882,19 +908,10 @@ function populateSpecialForms() {
         letrecSExp.expState = 0;
         letrecSExp.callName = "letrec";
         letrecSExp.expData = {};
-        letrecSExp.expData.body = syntaxStrTree.slice(2);
+        letrecSExp.expData.exp = syntaxStrTree;
         letrecSExp.eval = SpecialForms.inherit.eval;
-        letrecSExp.endingCallback = function(self) {
-            var bodyexp = self.expData.body.length>1?["begin"].concat(self.expData.body):self.expData.body[0];
-            return new Racket.SExp(bodyexp,self.namespace,self.continuation);
-        };
-        letrecSExp.postEachEvalCallback = function(self,i){
-            if (!self.exp[i]){
-                outputlog("letrec definitions evaluation failed.");
-                self.exp = [null];
-            }
-            return self;
-        };
+        letrecSExp.endingCallback = SpecialForms.endingCallback.conditionalBeginBody;
+        letrecSExp.postEachEvalCallback = SpecialForms.postEachEvalCallback.returnSelfOrFail;
         return letrecSExp;
     }
     keywords["let"] = new Racket.SpecialForm();
@@ -932,7 +949,7 @@ function populateSpecialForms() {
         letSExp.callName = "let";
         letSExp.expData = {};
         letSExp.expData.ids = syntaxStrTree[1].map(function(cur,i,arr) { return cur[0] });
-        letSExp.expData.body = syntaxStrTree.slice(2);
+        letSExp.expData.exp = syntaxStrTree;
         letSExp.eval = SpecialForms.inherit.eval;
         letSExp.endingCallback = function(self) {
             // then bind all
@@ -941,16 +958,11 @@ function populateSpecialForms() {
                 letNamespace[self.expData.ids[i]] = self.exp[i];
             } 
 
-            var bodyexp = self.expData.body.length>1?["begin"].concat(self.expData.body):self.expData.body[0];
+            var body = self.expData.path.slice(2);
+            var bodyexp = body.length>1?["begin"].concat(body):body[0];
             return new Racket.SExp(bodyexp,letNamespace,self.continuation);
         };
-        letSExp.postEachEvalCallback = function(self,i){
-            if (!self.exp[i]){
-                outputlog("let definitions evaluation failed.");
-                self.exp = [null];
-            }
-            return self;
-        };
+        letSExp.postEachEvalCallback = SpecialForms.postEachEvalCallback.returnSelfOrFail;
         return letSExp;
     }
     keywords["let*"] = new Racket.SpecialForm();
@@ -969,15 +981,12 @@ function populateSpecialForms() {
         var justExps = syntaxStrTree[1].map(function(cur,i,arr) { return cur[1] });
         var let_SExp = new Racket.SExp(justExps,let_Namespace,continuation);
         let_SExp.expState = 0;
-        let_SExp.callName = "letrec";
+        let_SExp.callName = "let*";
         let_SExp.expData = {};
         let_SExp.expData.ids = syntaxStrTree[1].map(function(cur,i,arr) { return cur[0] });
-        let_SExp.expData.body = syntaxStrTree.slice(2);
+        let_SExp.expData = syntaxStrTree;
         let_SExp.eval = SpecialForms.inherit.eval;
-        let_SExp.endingCallback = function(self) {
-            var bodyexp = self.expData.body.length>1?["begin"].concat(self.expData.body):self.expData.body[0];
-            return new Racket.SExp(bodyexp,self.namespace,self.continuation);
-        };
+        let_SExp.endingCallback = SpecialForms.endingCallback.conditionalBeginBody;
         let_SExp.postEachEvalCallback = function(self,i){
             if (!self.exp[i]){
                 outputlog("let* definitions evaluation failed.");
@@ -1050,9 +1059,7 @@ function populateSpecialForms() {
                     this.expData.setNamespace[this.expData.id] = this.exp[0];
                     return new Racket.Void(); //no errors
                 }
-                setSExp.postEachEvalCallback = function(self,i){
-                    return self;
-                };
+                setSExp.postEachEvalCallback = SpecialForms.postEachEvalCallback.returnSelf;
                 return setSExp;
             }
         } else { //should not have called set! at all
@@ -1085,33 +1092,30 @@ function populateSpecialForms() {
         condSExp.expState = 0;
         condSExp.callName = "cond";
         condSExp.expData = {};
-        condSExp.expData.entireExp = syntaxStrTree;
+        condSExp.expData.exp = syntaxStrTree;
         condSExp.eval = SpecialForms.inherit.eval;
         condSExp.endingCallback = SpecialForms.inherit.endingCallback;
-        condSExp.resultCallback = function(self){
-            // Should have exited by now
-            // No else condition was found.
-            return new Racket.Void(); //cond produced nothing
-        }
-        condSExp.postEachEvalCallback = function(self,i){
-            var predicate = self.exp[i];
-            if (predicate && !(predicate.type === "Bool" && !predicate.value)) { //if not null and not false Racket.Bool
-                var branch = self.expData.entireExp[1+i].slice(1);
-                var nmsp = self.namespace;
-                if (branch.length ===0) {
-                    branch = new Racket.Void();
-                } else if (branch.length ===1) {
-                    branch = branch[0];
-                } else { //handles when to add an implcit begin, but only when necessary
-                    branch = ["begin"].concat(branch);
-                    nmsp = Namespace(nmsp,true); //gotta make it a new namespace
-                }
-                return new Racket.SExp(branch,nmsp,self.continuation);
-            } //else {} //do nothing, go to next predicate
-            return self;
-        };
+        condSExp.resultCallback = SpecialForms.resultCallback.returnVoid;
+        condSExp.postEachEvalCallback = keywords["cond"].postEachEvalCallback;
         return condSExp;
     }
+    keywords["cond"].postEachEvalCallback = function(self,i){
+        var predicate = self.exp[i];
+        if (predicate && !(predicate.type === "Bool" && !predicate.value)) { //if not null and not false Racket.Bool
+            var branch = self.expData.exp[1+i].slice(1);
+            var nmsp = self.namespace;
+            if (branch.length ===0) {
+                branch = new Racket.Void();
+            } else if (branch.length ===1) {
+                branch = branch[0];
+            } else { //handles when to add an implcit begin, but only when necessary
+                branch = ["begin"].concat(branch);
+                nmsp = Namespace(nmsp,true); //gotta make it a new namespace
+            }
+            return new Racket.SExp(branch,nmsp,self.continuation);
+        } //else {} //do nothing, go to next predicate
+        return self;
+    };
     keywords["if"] = new Racket.SpecialForm();
     keywords["if"].evalBody = function (syntaxStrTree, namespace, continuation) {
         //assert syntaxStrTree[0] === "if"
@@ -1127,21 +1131,17 @@ function populateSpecialForms() {
         ifSExp.expState = 0;
         ifSExp.callName = "if";
         ifSExp.expData = {};
-        ifSExp.expData.path = syntaxStrTree;
+        ifSExp.expData.exp = syntaxStrTree;
         ifSExp.eval = SpecialForms.inherit.eval;
         ifSExp.endingCallback = SpecialForms.inherit.endingCallback;
-        ifSExp.resultCallback = function(self){
-            // Should have exited by now
-            // No else condition was found.
-            return new Racket.Void(); //cond produced nothing
-        }
+        ifSExp.resultCallback = SpecialForms.resultCallback.returnVoid;
         ifSExp.postEachEvalCallback = function(self,i){
             var predicate = self.exp[0];
             if (!predicate) {
                 outputlog("if predicate evaluation gave error.")
                 return null;
             }
-            var ifExp = self.expData.path;
+            var ifExp = self.expData.exp;
             if (!(predicate.type==="Bool" && !predicate.value)) { //if not null and not false Racket.Bool
                 return new Racket.SExp(ifExp[2],self.namespace,self.continuation);
             } else {
@@ -1166,17 +1166,13 @@ function populateSpecialForms() {
         whenSExp.expState = 0;
         whenSExp.callName = "when";
         whenSExp.expData = {};
-        whenSExp.expData.path = syntaxStrTree;
+        whenSExp.expData.exp = syntaxStrTree;
         whenSExp.eval = SpecialForms.inherit.eval;
-        whenSExp.endingCallback = function(self) {
-            var body = self.expData.path.slice(2);
-            var bodyexp = body.length>1?["begin"].concat(body):body[0];
-            return new Racket.SExp(bodyexp,Namespace(self.namespace),self.continuation);
-        };
+        whenSExp.endingCallback = SpecialForms.endingCallback.conditionalBeginBody;
         whenSExp.postEachEvalCallback = function(self,i){
             var predicate = self.exp[0];
             if (!predicate) {
-                outputlog("when predicate evaluation gave error.")
+                outputlog("when predicate evaluation gave error.");
                 return null;
             }
             if (predicate.type==="Bool" && !predicate.value) {
@@ -1202,13 +1198,9 @@ function populateSpecialForms() {
         unlessSExp.expState = 0;
         unlessSExp.callName = "unless";
         unlessSExp.expData = {};
-        unlessSExp.expData.path = syntaxStrTree;
+        unlessSExp.expData.exp = syntaxStrTree;
         unlessSExp.eval = SpecialForms.inherit.eval;
-        unlessSExp.endingCallback = function(self) {
-            var body = self.expData.path.slice(2);
-            var bodyexp = body.length>1?["begin"].concat(body):body[0];
-            return new Racket.SExp(bodyexp,Namespace(self.namespace),self.continuation);
-        };
+        unlessSExp.endingCallback = SpecialForms.endingCallback.conditionalBeginBody;
         unlessSExp.postEachEvalCallback = function(self,i){
             var predicate = self.exp[0];
             if (!predicate) {
@@ -1237,13 +1229,9 @@ function populateSpecialForms() {
         beginSExp.expState = 0;
         beginSExp.callName = "begin";
         beginSExp.eval = SpecialForms.inherit.eval;
-        beginSExp.resultCallback = function(self){
-            return self.exp[self.exp.length-1];
-        };
+        beginSExp.resultCallback = SpecialForms.resultCallback.returnLastExp;
         beginSExp.endingCallback = SpecialForms.inherit.endingCallback;
-        beginSExp.postEachEvalCallback = function(self,i){
-            return self;
-        };
+        beginSExp.postEachEvalCallback = SpecialForms.postEachEvalCallback.returnSelf;
         return beginSExp;
     }
     keywords["begin0"] = new Racket.SpecialForm();
@@ -1265,9 +1253,7 @@ function populateSpecialForms() {
             return self.exp[0];
         };
         begin0SExp.endingCallback = SpecialForms.inherit.endingCallback;
-        begin0SExp.postEachEvalCallback = function(self,i){
-            return self;
-        };
+        begin0SExp.postEachEvalCallback = SpecialForms.postEachEvalCallback.returnSelf;
         return begin0SExp;
     }
     keywords["require"] = new Racket.SpecialForm();
@@ -1283,9 +1269,7 @@ function populateSpecialForms() {
         requireSExp.expState = 0;
         requireSExp.callName = "require";
         requireSExp.eval = SpecialForms.inherit.eval;
-        requireSExp.resultCallback = function(self){
-            return new Racket.Void();
-        };
+        requireSExp.resultCallback = SpecialForms.resultCallback.returnVoid;
         requireSExp.endingCallback = SpecialForms.inherit.endingCallback;
         /*requireSExp.endingCallback = function(self) {
             var body = self.expData.path.slice(2);
