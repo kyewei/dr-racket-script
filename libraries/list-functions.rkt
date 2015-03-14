@@ -25,6 +25,24 @@
                        (cons fn
                              (cons lst rst)))])))
 
+(define (for-each fn lst . rst)
+  (local [(define (unary-for-each fn lst)
+            (cond [(empty? lst) (void)]
+                  [else (begin (fn (first lst))
+                               (unary-for-each fn (rest lst)))]))
+          (define (full-for-each fn lst . rst)
+            (cond [(empty? lst) (void)]
+                  [else (begin (apply fn (cons (first lst)
+                                               (map first rst)))
+                               (apply full-for-each 
+                                      (cons fn
+                                            (cons (rest lst)
+                                                  (map rest rst)))))]))]
+    (cond [(empty? rst) (unary-for-each fn lst)]
+          [else (apply full-for-each
+                       (cons fn
+                             (cons lst rst)))])))
+
 (define (andmap fn lst . rst)
   (local [(define (unary-andmap lst)
             (cond [(empty? lst) true]
@@ -117,12 +135,12 @@
                      (first rst))]))
 
 (define (build-list num fn)
-  (local [(define (build-list/acc count acc)
-            (cond [(< count 0) acc]
-                  [else (build-list/acc (sub1 count)
-                                        (cons (fn count)
-                                              acc))]))]
-    (build-list/acc (sub1 num) empty)))
+  (local [(define (build-list/acc count fn)
+            (cond [(< count num) 
+                   (cons (fn count)
+                         (build-list/acc (+ 1 count) fn))]
+                  [else empty]))]
+    (build-list/acc 0 fn)))
 
 (define (flatten lst)
   (cond [(empty? lst) empty]
