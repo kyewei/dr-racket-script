@@ -333,11 +333,6 @@ Racket.Continuation = function (namespace,continuation) {
     }
     this.namespace = namespace;
     this.continuation = continuation;
-    this.ids = Object.keys(this.namespace); //getOwnPropertyNames can be used too, keys is better for smaller lists?
-    this.obj = [];
-    for (var i = 0; i< this.ids.length; ++i) {
-        this.obj[i] = this.namespace[this.ids[i]];
-    }
 };
 Racket.Continuation.prototype = new Racket.Function();
 Racket.Continuation.continuation = {};
@@ -346,16 +341,10 @@ Racket.Continuation.prototype.eval = function (exp,namespace,continuation) {
     // Called like (cc result)
     // var continuation is never used
     // var namespace is never used
-    if (continuation != this) {
+    
+    /*if (continuation != this) {
         console.log("Swapping contexts for call ",exp," from ",continuation," to ",this);
-        var curId = Object.keys(this.namespace);
-        for (var i = 0; i< curId.length; ++i) { // clear current bound ids
-            this.namespace[curId[i]] = null;
-        }
-        for (var i = 0; i< this.ids.length; ++i) { // assign old bound ids
-            this.namespace[this.ids[i]] = this.obj[i];
-        }
-    }
+    }*/
     return this.continuation(exp[1],this.namespace);
 };
 
@@ -380,9 +369,9 @@ Racket.SExp.prototype.evalFinal = function() {
     };*/
 
     do {
-        /*if (sexp.exp.constructor === Array) {
-            console.log(sexp.exp.toString());
-        }*/
+        if (sexp.exp.constructor === Array) {
+            //console.log(sexp.exp.toString());
+        }
         sexp = sexp.eval();
 
     } while (sexp.type === "SExp");
@@ -597,6 +586,13 @@ function populateSpecialForms() {
         if (!self.exp[i]){
             outputlog(self.callName+" definitions evaluation failed.");
             self.exp = [null];
+        }
+        return self;
+    };
+    SpecialForms.postEachEvalCallback.returnSelfBegin = function(self,i) {
+        if (i+1<self.exp.length && self.exp[i+1][0].substring(0,6) === "define") {
+            var id = self.exp[i+1][1].constructor === Array? self.exp[i+1][1][1] : self.exp[i+1][1];
+            self.namespace[id] = null;
         }
         return self;
     };
@@ -1205,7 +1201,7 @@ function populateSpecialForms() {
         beginSExp.eval = SpecialForms.inherit.eval;
         beginSExp.resultCallback = SpecialForms.resultCallback.returnLastExp;
         beginSExp.endingCallback = SpecialForms.inherit.endingCallback;
-        beginSExp.postEachEvalCallback = SpecialForms.postEachEvalCallback.returnSelf;
+        beginSExp.postEachEvalCallback = SpecialForms.postEachEvalCallback.returnSelfBegin;
         return beginSExp;
     }
     keywords["begin0"] = new Racket.SpecialForm();
@@ -1861,7 +1857,7 @@ function populateStandardFunctions(namespace) {
         var identity = new Racket.Continuation(namespace);
         identity.continuation = Racket.Continuation.continuation.identity;
         for (var i = 0; i< formatStr.length; ++i) {
-            if (formatStr.charAt(i) === "\~" || currentObject <= syntaxStrTreeArg.length-1) {
+            if (formatStr.charAt(i) === "\~") {
                 ++i;
 
                 switch (formatStr.charAt(i)) {
