@@ -8,6 +8,7 @@ var filesubmit;
 var filename;
 var deletemenu;
 var deletebutton;
+var listAbbrev;
 
 // ---------- SCHEME TYPE DECLARATIONS AND SETUP ----------
 
@@ -55,11 +56,11 @@ Racket.Exp = function () {
 
 
 Racket.Type = function() {
-    this.eval = function() { return this; } ;
     this.evalFinal = this.eval;
 };
 Racket.Type.prototype = new Racket.Exp();
-
+Racket.Type.eval = function() { return this; };
+//Racket.Type.verboseToString = function() { return this.toString(); };
 
 // ---------- ATOMIC TYPES ----------
 Racket.Num = function (value) {
@@ -89,6 +90,9 @@ Racket.Sym = function (value) {
     this.toString = function() {
         return "\'"+this.value;
     }
+    /*this.verboseToString = function() {
+        return "\(quote "+this.value+"\)";
+    }*/
 };
 Racket.Char = function (value) {
     this.type="Char";
@@ -115,54 +119,105 @@ Racket.List = function () {
 };
 Racket.Empty = function () {
     this.type="Empty";
-    this.toString = function () {
-        return "empty";
-    };
-    this.length = function() { return 0; };
 };
+Racket.Empty.prototype = new Racket.List();
+Racket.Empty.prototype.toString = function () {
+    return listAbbrev.checked? "\'\(\)" : "empty";
+};
+Racket.Empty.prototype.length = function() { return 0; };
+Racket.List.prototype = new Racket.Type();
+
 Racket.Cell = function (left, right) {
     this.type="Cell";
     this.left = left;
     this.right = right;
-    this.toString = function () {
-        var returnStr = "\(list ";
-
-        var currentCell = this;
-
-        do {
-            returnStr+=currentCell.left.toString();
-
-            if (currentCell.right.type === "Cell"){
-                returnStr+=" ";
-                currentCell = currentCell.right;
-                continue;
-            } else if (currentCell.right.type === "Empty"){
-                break;
-            } else {
-                returnStr+=" . " + currentCell.right.toString();
-                break;
-            }
-        } while(true); // It will break if it reaches empty (base case) or non-cell
-
-        return returnStr+")";
-    };
-    this.length = function() {
-        var currentCell = this;
-        var count = 0;
-        while (currentCell.type === "Cell"){
-            count++;
-            currentCell = currentCell.right;
-        }
-        if (currentCell.type === "Empty"){ //proper list ending in Racket.Empty;
-            return count;
-        } else { // improper list huh.
-            return null;
-        }
-    };
 };
-Racket.List.prototype = new Racket.Type();
-Racket.Empty.prototype = new Racket.List();
 Racket.Cell.prototype = new Racket.List();
+Racket.Cell.prototype.length = function() {
+    var currentCell = this;
+    var count = 0;
+    while (currentCell.type === "Cell"){
+        count++;
+        currentCell = currentCell.right;
+    }
+    if (currentCell.type === "Empty"){ //proper list ending in Racket.Empty;
+        return count;
+    } else { // improper list huh.
+        return null;
+    }
+};
+Racket.Cell.prototype.toString = function () { // Prints shorthand literal notation '(...) instead of full-blown (list ...)
+    if (!listAbbrev.checked) {
+        return this.verboseToString();
+    }
+
+    var returnStr = "\'";
+    var ending;
+    var currentCell = this;
+
+    if (currentCell.left.type === "Sym" && currentCell.left.value === "quote" && currentCell.right.right.type === "Empty") {
+        ending = "";
+        returnStr+="\'";
+        currentCell = currentCell.right;
+    } else {
+        ending = "\)";
+        returnStr+="\("
+    }
+
+    do {
+        var add = "";
+        if (currentCell.left.type === "Sym") {
+            if (currentCell.left.value === "quote" && currentCell.right.right.type === "Empty") {
+                add +="\'";
+            } else {
+                add += currentCell.left.value;
+            }
+        } else if (currentCell.left.type === "Cell") {
+            add += currentCell.left.toString().substring(1);
+        } else {
+            add += currentCell.left.toString();
+        }
+        returnStr+=add;
+
+        if (currentCell.right.type === "Cell"){
+            returnStr+=" ";
+            currentCell = currentCell.right;
+            continue;
+        } else if (currentCell.right.type === "Empty"){
+            break;
+        } else {
+            returnStr+=" . " + currentCell.right.toString();
+            break;
+        }
+    } while(true); // It will break if it reaches empty (base case) or non-cell
+
+
+    return returnStr+ending;
+};
+Racket.Cell.prototype.verboseToString = function () {
+    var returnStr = "\(list ";
+
+    var currentCell = this;
+
+    do {
+        returnStr+=currentCell.left.toString();
+
+        if (currentCell.right.type === "Cell"){
+            returnStr+=" ";
+            currentCell = currentCell.right;
+            continue;
+        } else if (currentCell.right.type === "Empty"){
+            break;
+        } else {
+            returnStr+=" . " + currentCell.right.toString();
+            break;
+        }
+    } while(true); // It will break if it reaches empty (base case) or non-cell
+
+    return returnStr+")";
+};
+
+
 
 
 // ---------- STRUCTURE ----------
@@ -600,6 +655,45 @@ function populateSpecialForms() {
     keywords["false"] = new Racket.Bool(false);
     keywords["empty"] = new Racket.Empty();
     keywords["null"] = keywords["empty"];
+    keywords["quote"] = new Racket.SpecialForm();
+    keywords["quote"].evalBody = function(syntaxStrTree, namespace, continuation) {
+        var literal = syntaxStrTree[1];
+        var result = this.process(literal);
+
+
+        return continuation.eval([continuation, result],namespace,continuation);
+    };
+    keywords["quote"].process = function(literal) {
+        // For reasoning, see function convertQuote(syntaxStrBlocks); down down down ... below
+
+        if (literal.constructor === Array) {
+            //result = this.process(literal);
+            var processed = literal.map(keywords["quote"].process);
+            var identity = new Racket.Continuation(globalNamespace);
+            identity.continuation = Racket.Continuation.continuation.identity;
+            var list = new Racket.SExp(["list"].concat(processed),globalNamespace,identity).evalFinal();
+            return list;
+        } else {
+            var result = keywords["quote"].processAtom(literal);
+            return result;
+        }
+    };
+    keywords["quote"].processAtom = function(literal) {
+        if (literal instanceof Racket.Type) {
+            result = literal; // For now. I don't think this will ever be reached
+        } else if (!isNaN(Number(literal))) {
+            result = new Racket.Num(Number(literal));
+        } else if (literal.charAt(0)==="\"" && literal.charAt(literal.length-1)==="\"") {
+            result =  new Racket.Str(literal.substring(1,literal.length-1));
+        } else if (literal.substring(0,2)==="\#\\" && literal.length>2) {
+            result = new Racket.Char(literal.substring(2));
+        } else if (literal.charAt(0)==="\#" && literal.length==2) {
+            result = new Racket.Bool(literal==="\#t");
+        } else {
+            result = new Racket.Sym(literal);
+        }
+        return result;
+    };
     keywords["and"] = new Racket.SpecialForm();
     keywords["and"].evalBody = function(syntaxStrTree, namespace, continuation) {
         //assert syntaxStrTree[0] === "and"
@@ -755,10 +849,10 @@ function populateSpecialForms() {
 
         // Make type-checker method
         // i.e. if type is posn, this is (posn? posn-arg)
-        if (checkNamespace(typename+"?",namespace)){
+        /*f (checkNamespace(typename+"?",namespace)){
             outputlog(typename+"?"+" already defined.");
             return null;
-        }
+        }*/
         namespace[typename+"?"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
         namespace[typename+"?"].evalBody = function(syntaxStrTreeArg, namespace) {
             if (syntaxStrTreeArg.length !=2) {
@@ -769,10 +863,10 @@ function populateSpecialForms() {
         };
         // Make constructor method
         // i.e. if type is posn, this is (make-posn arg1 arg2)
-        if (checkNamespace("make-"+typename,namespace)){
+        /*if (checkNamespace("make-"+typename,namespace)){
             outputlog("make-"+typename+" already defined.");
             return null;
-        }
+        }*/
         namespace["make-"+typename] = new Racket.Lambda([".","rst"], new Racket.Exp(), namespace); //has propertyCount many arguments
         namespace["make-"+typename].evalBody = function(syntaxStrTreeArg, namespace) {
             if (syntaxStrTreeArg.length != propertyCount+1) {
@@ -782,10 +876,10 @@ function populateSpecialForms() {
             return new Racket[typename](syntaxStrTreeArg.slice(1));
         };
         //Clone without make prefix
-        if (checkNamespace(typename,namespace)){
+        /*if (checkNamespace(typename,namespace)){
             outputlog(typename+" already defined.");
             return null;
-        }
+        }*/
         namespace[typename] = new Racket.Lambda([".","rst"], new Racket.Exp(), namespace); //has propertyCount many arguments
         namespace[typename].evalBody = function(syntaxStrTreeArg, namespace) {
             if (syntaxStrTreeArg.length != propertyCount+1) {
@@ -800,10 +894,10 @@ function populateSpecialForms() {
         // i.e. if type is posn, this makes (posn-x posn-arg), and (posn-y posn-arg)
         for (var i=0; i< propertyCount; ++i) {
             var id = propertyNames[i];
-            if (checkNamespace(typename+"-"+id,namespace)){
+            /*if (checkNamespace(typename+"-"+id,namespace)){
                 outputlog(typename+"-"+id+" already defined.");
                 return null;
-            }
+            }*/
             namespace[typename+"-"+id] = new Racket.Lambda(["obj"], new Racket.Exp(), namespace);
             namespace[typename+"-"+id].id = propertyNames[i]; // needed to do this because this makes a deep copy
             namespace[typename+"-"+id].evalBody = function(syntaxStrTreeArg, namespace) {
@@ -2342,6 +2436,7 @@ function prep() {
     deletemenu = document.getElementById("delete-module-menu");
     deletebutton = document.getElementById("delete-button");
     filename = document.getElementById("file-name");
+    listAbbrev = document.getElementById("list-abbrev-checkbox");
     reindentbutton.onclick = function() {
         textfield.value = textfield.value.trim();
         for (var i=0; i< textfield.value.length; ++i) {
@@ -2726,9 +2821,14 @@ function evaluate(str) {
             outputlog("Error occurred parsing or tokenizing code.");
             return null;
         }
+
+        syntaxStrTreeBlocks = convertQuote(syntaxStrTreeBlocks);
+
         if (syntaxStrTreeBlocks[0] === "#lang") {
             syntaxStrTreeBlocks = syntaxStrTreeBlocks.slice(2);
         }
+        console.log("Parsed String Tree:" );
+        console.log(syntaxStrTreeBlocks);
 
         if (checkbox.checked && readyForUser)
             outputfield.value = "";
@@ -2805,9 +2905,6 @@ function parseStr(strArr) {
     }
 
     var parsedStrCodeTree = produceCodeBlocks(strArr);
-    console.log("Parsed String Tree:" );
-    console.log(parsedStrCodeTree);
-
     return parsedStrCodeTree;
 };
 
@@ -2866,6 +2963,57 @@ function produceCodeBlocks(tokens){
     }
     return block;
 }
+
+function convertQuote(syntaxStrBlocks){
+    var isQuote = false;
+    for (var i=0; i< syntaxStrBlocks.length; ++i) {
+        if (syntaxStrBlocks[i] === "\'") {
+            var j=i; 
+            while(syntaxStrBlocks[j] ==="\'") {
+                ++j;
+            }
+            if (j<syntaxStrBlocks.length) {
+                // Rules for quote special form
+                // if (quote 5) -> 5
+                // if (quote "d") -> "d"
+                // if (quote #\d) -> #\d
+                // if (quote asdf) -> 'asdf (Symbol type)
+                // if (quote (a b c d) ...) where a b c d can be atoms or (),
+                //    -> (list (quote a) (quote b) (quote c) (quote d) ...)
+                //   i.e.: '(1 2) -> 
+                //         (list (quote 1) (quote 2)) -> 
+                //         (list 1 2)
+                //   ie.: ''a -> 
+                //        (quote (quote a)) -> 
+                //        (list (quote quote) (quote a)) -> 
+                //        (list 'quote 'a)
+                //   i.e.: '('a 2) -> 
+                //         (quote ((quote a) 2)) -> 
+                //         (list (quote (quote a)) (quote 2)) -> 
+                //         (list (list (quote quote) (quote a)) 2)
+                //         (list (list 'quote 'a) 2)
+
+                // Rule for expanding ''a, '('a), '''''a etc into (quote ... blah)
+                // replace a 'next_obj with (quote next_obj)
+                // if next_obj is a ' also, follow through so that i.e. ''a is (quote (quote a))
+                // if next_obj is a (stuff_inside_i ... ) for 1<=i<=n n entries, 
+                //                                        let stuff_inside_modified_i = convertQuote(stuff_inside_i)
+                //    then replace with (list stuff_inside_modified_i ...)
+                
+                var replace = ["quote"].concat(syntaxStrBlocks.slice(i+1,j+1));
+                replace = convertQuote(replace);
+                syntaxStrBlocks = syntaxStrBlocks.slice(0,i).concat([replace]).concat(syntaxStrBlocks.slice(j+1));
+            } else {
+                console.log("Quote is not followed by anything.");
+                return syntaxStrBlocks;
+            }
+        } else if (syntaxStrBlocks[i].constructor === Array){
+            syntaxStrBlocks[i] = convertQuote(syntaxStrBlocks[i]);
+        }
+    }
+    return syntaxStrBlocks;
+}
+
 function parseStepExpBlocks (syntaxStrBlocks, namespace) {
     if (syntaxStrBlocks.length > 0) {
         while (syntaxStrBlocks.constructor === Array && syntaxStrBlocks[0][0] === "begin") {
@@ -2882,7 +3030,8 @@ function parseStepExpBlocks (syntaxStrBlocks, namespace) {
 
         if (exp) { // Expression is simplest form
             if (exp !== true && exp.type !== "Void") {
-                outputlog(""+exp); //Print output to console
+                //outputlog((listAbbrev.checked ? exp.toString() : exp.verboseToString())); //Print output to console
+                outputlog(exp.toString());
             }
             return syntaxStrBlocks.slice(1); //return rest of blocks to parse
         } else {
@@ -2903,8 +3052,8 @@ function parseLookupType(expression,namespace) {
         return new Racket.Num(Number(expression));
     else if (expression[0]==="\"" && expression[expression.length-1]==="\"")
         return new Racket.Str(expression.substring(1,expression.length-1));
-    else if (expression[0]==="\'" && expression.length>1)
-        return new Racket.Sym(expression.substring(1));
+    //else if (expression[0]==="\'" && expression.length>1)
+    //    return new Racket.Sym(expression.substring(1));
     else if (expression.substring(0,2)==="\#\\" && expression.length>2)
         return new Racket.Char(expression.substring(2));
     else if (expression[0]==="\#" && expression.length==2)
