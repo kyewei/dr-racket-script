@@ -8,6 +8,7 @@ var filesubmit;
 var filename;
 var deletemenu;
 var deletebutton;
+var listAbbrev;
 
 // ---------- SCHEME TYPE DECLARATIONS AND SETUP ----------
 
@@ -18,9 +19,7 @@ var deletebutton;
 
 // This solves all my problems with JS's prototypical inheritance :D
 function Namespace(inheritedNamespace, isTopLevel) {
-    function Namespace() {};
-    Namespace.prototype = inheritedNamespace;
-    var newNamespace = new Namespace();
+    var newNamespace = Object.create(inheritedNamespace);
 
     //should be obfuscated enough, since ids cannot have #'s anyways.
     //__proto__ is not implemented in every browser, so this will do for now
@@ -33,7 +32,13 @@ function Namespace(inheritedNamespace, isTopLevel) {
     newNamespace["#thisModuleProvide"] = {}; //list of module provided id's
     return newNamespace;
 };
-var libraryNamespace = Namespace(null);
+
+var Racket = {};
+
+Racket.Namespace = {};
+
+
+var libraryNamespace = Namespace(Racket.Namespace);
 libraryNamespace["#moduleNamespaces"] = {};
 libraryNamespace["#moduleNamespaces"]["#moduleProvide"] = {};
 var globalNamespace = Namespace(libraryNamespace,true);
@@ -43,7 +48,6 @@ globalNamespace["#moduleNamespaces"]["#moduleProvide"] = {};
 var uploadedModulesRawText = {};
 var uploadedModulesParsed = {};
 
-var Racket = {};
 var aggressiveOptimization = false;
 
 
@@ -55,114 +59,182 @@ Racket.Exp = function () {
 
 
 Racket.Type = function() {
-    this.eval = function() { return this; } ;
-    this.evalFinal = this.eval;
 };
 Racket.Type.prototype = new Racket.Exp();
+Racket.Type.prototype.isRacketType = true;
+Racket.Type.prototype.eval = function() { return this; };
+//Racket.Type.verboseToString = function() { return this.toString(); };
 
 
 // ---------- ATOMIC TYPES ----------
 Racket.Num = function (value) {
-    this.type="Num";
     this.value=value; //JS floating point
-    this.toString = function(){
-        return ""+this.value;
-    }
-};
-Racket.Str = function (value) {
-    this.type="Str";
-    this.value=value; //JS string
-    this.toString = function(){
-        return "\""+this.value+"\"";
-    }
-};
-Racket.Bool = function (value) {
-    this.type="Bool";
-    this.value=value; //JS boolean, either true or false
-    this.toString = function(){
-        return (this.value? "#t" : "#f");
-    }
-};
-Racket.Sym = function (value) {
-    this.type="Sym";
-    this.value=value; //JS string
-    this.toString = function() {
-        return "\'"+this.value;
-    }
-};
-Racket.Char = function (value) {
-    this.type="Char";
-    this.value=value; //JS string, length 1
-    this.toString = function() {
-        return "#\\"+this.value;
-    }
-    if (value ==="newline") {
-        this.value = "\\n";
-        this.toString = function () {
-            return "\#\\newline";
-        }
-    }
 };
 Racket.Num.prototype = new Racket.Type();
+Racket.Num.prototype.type="Num";
+Racket.Num.prototype.toString = function(){
+    return ""+this.value;
+};
+// -----
+Racket.Str = function (value) {
+    this.value=value; //JS string
+};
 Racket.Str.prototype = new Racket.Type();
+Racket.Str.prototype.type="Str";
+Racket.Str.prototype.toString = function(){
+    return "\""+this.value+"\"";
+};
+// ----
+Racket.Bool = function (value) {
+    this.value=value; //JS boolean, either true or false
+};
 Racket.Bool.prototype = new Racket.Type();
+Racket.Bool.prototype.type="Bool";
+Racket.Bool.prototype.toString = function(){
+    return (this.value? "#t" : "#f");
+};
+// -----
+Racket.Sym = function (value) {
+    this.value=value; //JS string
+};
 Racket.Sym.prototype = new Racket.Type();
+Racket.Sym.prototype.type="Sym";
+Racket.Sym.prototype.toString = function() {
+    var hasSpace = false;
+    var allNum = true;
+    for (var i=0; i< this.value.length; ++i) {
+        var c = this.value.charAt(i);
+        if (c === " ") {
+            hasSpace=true;
+            break;
+        }
+        if (!(c.charCodeAt(0) >= 48 && c.charCodeAt(0) <= 57)) {
+            allNum = false;
+            break;
+        }
+    }
+    var addAbs = hasSpace || allNum;
+    return "\'"+ (addAbs? "\|":"") + this.value + (addAbs? "\|":"");
+};
+// -----
+Racket.Char = function (value) {
+    this.value=value; //JS string, length 1
+    if (value ==="newline") {
+        this.value = "\\n";
+    }
+};
 Racket.Char.prototype = new Racket.Type();
-
+Racket.Char.prototype.type = "Char";
+Racket.Char.prototype.toString = function() {
+    return this.value=== "\\n" ? "\#\\newline" : "#\\"+this.value;
+};
 
 // ---------- LIST TYPES ----------
 Racket.List = function () {
 };
+Racket.List.prototype = new Racket.Type();
+Racket.List.prototype.isRacketList = true;
+// -----
 Racket.Empty = function () {
-    this.type="Empty";
-    this.toString = function () {
-        return "empty";
-    };
-    this.length = function() { return 0; };
 };
+Racket.Empty.prototype = new Racket.List();
+Racket.Empty.prototype.type = "Empty";
+Racket.Empty.prototype.toString = function () {
+    return listAbbrev.checked? "\'\(\)" : "empty";
+};
+Racket.Empty.prototype.length = function() { return 0; };
+// -----
 Racket.Cell = function (left, right) {
-    this.type="Cell";
     this.left = left;
     this.right = right;
-    this.toString = function () {
-        var returnStr = "\(list ";
-
-        var currentCell = this;
-
-        do {
-            returnStr+=currentCell.left.toString();
-
-            if (currentCell.right.type === "Cell"){
-                returnStr+=" ";
-                currentCell = currentCell.right;
-                continue;
-            } else if (currentCell.right.type === "Empty"){
-                break;
-            } else {
-                returnStr+=" . " + currentCell.right.toString();
-                break;
-            }
-        } while(true); // It will break if it reaches empty (base case) or non-cell
-
-        return returnStr+")";
-    };
-    this.length = function() {
-        var currentCell = this;
-        var count = 0;
-        while (currentCell.type === "Cell"){
-            count++;
-            currentCell = currentCell.right;
-        }
-        if (currentCell.type === "Empty"){ //proper list ending in Racket.Empty;
-            return count;
-        } else { // improper list huh.
-            return null;
-        }
-    };
 };
-Racket.List.prototype = new Racket.Type();
-Racket.Empty.prototype = new Racket.List();
 Racket.Cell.prototype = new Racket.List();
+Racket.Cell.prototype.type="Cell";
+Racket.Cell.prototype.length = function() {
+    var currentCell = this;
+    var count = 0;
+    while (currentCell.type === "Cell"){
+        count++;
+        currentCell = currentCell.right;
+    }
+    if (currentCell.type === "Empty"){ //proper list ending in Racket.Empty;
+        return count;
+    } else { // improper list huh.
+        return null;
+    }
+};
+Racket.Cell.prototype.toString = function () { // Prints shorthand literal notation '(...) instead of full-blown (list ...)
+    if (!listAbbrev.checked) {
+        return this.verboseToString();
+    }
+
+    var returnStr = "\'";
+    var ending;
+    var currentCell = this;
+
+    if (currentCell.left.type === "Sym" && currentCell.left.value === "quote" && currentCell.right.right.type === "Empty") {
+        ending = "";
+        returnStr+="\'";
+        currentCell = currentCell.right;
+    } else {
+        ending = "\)";
+        returnStr+="\("
+    }
+
+    do {
+        var add = "";
+        if (currentCell.left.type === "Sym") {
+            if (currentCell.left.value === "quote" && currentCell.right.right.type === "Empty") {
+                add +="\'";
+            } else {
+                add += currentCell.left.value;
+            }
+        } else if (currentCell.left.isRacketList) {
+            add += currentCell.left.toString().substring(1);
+        } else {
+            add += currentCell.left.toString();
+        }
+        returnStr+=add;
+
+        if (currentCell.right.type === "Cell"){
+            returnStr+=" ";
+            currentCell = currentCell.right;
+            continue;
+        } else if (currentCell.right.type === "Empty"){
+            break;
+        } else {
+            returnStr+=" . " + currentCell.right.toString();
+            break;
+        }
+    } while(true); // It will break if it reaches empty (base case) or non-cell
+
+
+    return returnStr+ending;
+};
+Racket.Cell.prototype.verboseToString = function () {
+    var returnStr = "\(list ";
+
+    var currentCell = this;
+
+    do {
+        returnStr+=currentCell.left.toString();
+
+        if (currentCell.right.type === "Cell"){
+            returnStr+=" ";
+            currentCell = currentCell.right;
+            continue;
+        } else if (currentCell.right.type === "Empty"){
+            break;
+        } else {
+            returnStr+=" . " + currentCell.right.toString();
+            break;
+        }
+    } while(true); // It will break if it reaches empty (base case) or non-cell
+
+    return returnStr+")";
+};
+
+
 
 
 // ---------- STRUCTURE ----------
@@ -197,31 +269,31 @@ Racket.Vector.prototype = new Racket.Type();
 
 // ---------- VOID ----------
 Racket.Void = function() {
-    this.type="Void";
-    this.toString = function() {
-        return "\#\<void\>";
-    }
 };
 Racket.Void.prototype = new Racket.Type();
+Racket.Void.prototype.type="Void";
+Racket.Void.prototype.toString=function() {
+    return "\#\<void\>";
+};
 
 
 // ---------- FUNCTIONS AND THINGS THAT CAN BE CALLED LIKE A FUNCTION ----------
 Racket.Function = function () { // Covers Lambda and Case-Lambda
-    this.type="Lambda";
-    this.toString = function() { return "\#\<procedure\>"; };
 };
 Racket.Function.prototype = new Racket.Type();
-
+Racket.Function.prototype.type = "Lambda";
+Racket.Function.prototype.toString = function() { return "\#\<procedure\>"; };
+// -----
 Racket.SpecialForm = function () {
-    this.type = "SpecialForm";
-    this.toString = function() { return "\#\<macro\>"; };
 };
 Racket.SpecialForm.prototype = new Racket.Function();
+Racket.SpecialForm.prototype.type = "SpecialForm";
+Racket.SpecialForm.prototype.toString = function() { return "\#\<macro\>"; };
 Racket.SpecialForm.prototype.eval = function (syntaxStrTreeArg, namespace, continuation) {
     var result = this.evalBody(syntaxStrTreeArg,namespace, continuation);
     return result;
 };
-
+// -----
 Racket.Lambda = function (ids, body, namespace) {
     // ids is an Array of Strings that is declared in the sub-namespace
     // body is the Exp that will involve members of ids
@@ -281,7 +353,7 @@ Racket.Lambda.prototype.evalBody = function (syntaxStrTreeArg, namespace, contin
         return null;
     }
 };
-
+// -----
 Racket.CaseLambda = function (body, namespace) {
     // body is an [[ids body], ...] where each element is a valid new Lambda(ids, body, namespace)
 
@@ -325,16 +397,16 @@ Racket.CaseLambda.prototype.evalBody = function (syntaxStrTreeArg, namespace, co
     outputlog("Function parameter count mismatch.");
     return null;
 };
-
+// -----
 Racket.Continuation = function (namespace,continuation) {
-    this.type = "Continuation";
-    this.toString = function() {
-        return "\#\<continuation\>";
-    }
     this.namespace = namespace;
     this.continuation = continuation;
 };
 Racket.Continuation.prototype = new Racket.Function();
+Racket.Continuation.prototype.type = "Continuation";
+Racket.Continuation.prototype.toString = function() {
+    return "\#\<continuation\>";
+};
 Racket.Continuation.continuation = {};
 Racket.Continuation.continuation.identity = function(r) { return r; };
 Racket.Continuation.prototype.eval = function (exp,namespace,continuation) {
@@ -352,7 +424,6 @@ Racket.Continuation.prototype.eval = function (exp,namespace,continuation) {
 
 // ---------- S-EXPRESSIONS ----------
 Racket.SExp = function(exp, namespace, continuation) { // This is a wrapper for SExp as a Type.
-    this.type="SExp";
     this.exp = exp;
     this.expState = 0;
     this.namespace = namespace;
@@ -360,6 +431,7 @@ Racket.SExp = function(exp, namespace, continuation) { // This is a wrapper for 
     this.callName=null;
 };
 Racket.SExp.prototype = new Racket.Exp();
+Racket.SExp.prototype.type = "SExp";
 Racket.SExp.prototype.evalFinal = function() {
     var sexp = this;
 
@@ -436,7 +508,7 @@ Racket.SExp.prototype.eval = function(){
         }
         // Skip making sub SExp if already Racket type
         var nextExp = this.exp[this.expState];
-        if (nextExp && nextExp instanceof Racket.Type) {
+        if (nextExp && nextExp.isRacketType) {
             var funcCall = new Racket.SExp(this.exp,this.namespace,this.continuation);
             funcCall.expState = this.expState+1;
             funcCall.callName = this.callName;
@@ -516,7 +588,7 @@ function populateSpecialForms() {
 
         // Skip making sub SExp if already Racket type
         var nextExp = this.exp[this.expState];
-        if (nextExp && nextExp instanceof Racket.Type) {
+        if (nextExp && nextExp.isRacketType) {
             var funcCall = new Racket.SExp(this.exp,this.namespace,this.continuation);
             funcCall.eval = this.eval;
             funcCall.expState = this.expState+1;
@@ -600,6 +672,44 @@ function populateSpecialForms() {
     keywords["false"] = new Racket.Bool(false);
     keywords["empty"] = new Racket.Empty();
     keywords["null"] = keywords["empty"];
+    keywords["quote"] = new Racket.SpecialForm();
+    keywords["quote"].evalBody = function(syntaxStrTree, namespace, continuation) {
+        var literal = syntaxStrTree[1];
+        var result = keywords["quote"].process(literal);
+        return continuation.eval([continuation, result],namespace,continuation);
+    };
+    keywords["quote"].process = function(literal) {
+        // For reasoning, see function convertQuote(syntaxStrBlocks); down down down ... below
+
+        if (literal.constructor === Array) {
+            var processed = literal.map(keywords["quote"].process);
+            var identity = new Racket.Continuation(globalNamespace);
+            identity.continuation = Racket.Continuation.continuation.identity;
+            var list = new Racket.SExp(["list"].concat(processed),globalNamespace,identity).evalFinal();
+            return list;
+        } else {
+            var result = keywords["quote"].processAtom(literal);
+            return result;
+        }
+    };
+    keywords["quote"].processAtom = function(literal) {
+        if (literal.isRacketType) {
+            result = literal; // For now. I don't think this will ever be reached
+        } else if (!isNaN(Number(literal))) {
+            result = new Racket.Num(Number(literal));
+        } else if (literal.charAt(0)==="\"" && literal.charAt(literal.length-1)==="\"") {
+            result =  new Racket.Str(literal.substring(1,literal.length-1));
+        } else if (literal.substring(0,2)==="\#\\" && literal.length>2) {
+            result = new Racket.Char(literal.substring(2));
+        } else if (literal.charAt(0)==="\#" && literal.length==2) {
+            result = new Racket.Bool(literal==="\#t");
+        } else if (literal.charAt(0) === "\|" && literal.charAt(literal.length-1) === "\|") {
+            result = new Racket.Sym(literal.substring(1,literal.length-1));
+        } else {
+            result = new Racket.Sym(literal);
+        }
+        return result;
+    };
     keywords["and"] = new Racket.SpecialForm();
     keywords["and"].evalBody = function(syntaxStrTree, namespace, continuation) {
         //assert syntaxStrTree[0] === "and"
@@ -755,10 +865,10 @@ function populateSpecialForms() {
 
         // Make type-checker method
         // i.e. if type is posn, this is (posn? posn-arg)
-        if (checkNamespace(typename+"?",namespace)){
+        /*f (checkNamespace(typename+"?",namespace)){
             outputlog(typename+"?"+" already defined.");
             return null;
-        }
+        }*/
         namespace[typename+"?"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
         namespace[typename+"?"].evalBody = function(syntaxStrTreeArg, namespace) {
             if (syntaxStrTreeArg.length !=2) {
@@ -769,10 +879,10 @@ function populateSpecialForms() {
         };
         // Make constructor method
         // i.e. if type is posn, this is (make-posn arg1 arg2)
-        if (checkNamespace("make-"+typename,namespace)){
+        /*if (checkNamespace("make-"+typename,namespace)){
             outputlog("make-"+typename+" already defined.");
             return null;
-        }
+        }*/
         namespace["make-"+typename] = new Racket.Lambda([".","rst"], new Racket.Exp(), namespace); //has propertyCount many arguments
         namespace["make-"+typename].evalBody = function(syntaxStrTreeArg, namespace) {
             if (syntaxStrTreeArg.length != propertyCount+1) {
@@ -782,10 +892,10 @@ function populateSpecialForms() {
             return new Racket[typename](syntaxStrTreeArg.slice(1));
         };
         //Clone without make prefix
-        if (checkNamespace(typename,namespace)){
+        /*if (checkNamespace(typename,namespace)){
             outputlog(typename+" already defined.");
             return null;
-        }
+        }*/
         namespace[typename] = new Racket.Lambda([".","rst"], new Racket.Exp(), namespace); //has propertyCount many arguments
         namespace[typename].evalBody = function(syntaxStrTreeArg, namespace) {
             if (syntaxStrTreeArg.length != propertyCount+1) {
@@ -800,10 +910,10 @@ function populateSpecialForms() {
         // i.e. if type is posn, this makes (posn-x posn-arg), and (posn-y posn-arg)
         for (var i=0; i< propertyCount; ++i) {
             var id = propertyNames[i];
-            if (checkNamespace(typename+"-"+id,namespace)){
+            /*if (checkNamespace(typename+"-"+id,namespace)){
                 outputlog(typename+"-"+id+" already defined.");
                 return null;
-            }
+            }*/
             namespace[typename+"-"+id] = new Racket.Lambda(["obj"], new Racket.Exp(), namespace);
             namespace[typename+"-"+id].id = propertyNames[i]; // needed to do this because this makes a deep copy
             namespace[typename+"-"+id].evalBody = function(syntaxStrTreeArg, namespace) {
@@ -1357,6 +1467,26 @@ function populateStandardFunctions(namespace) {
     namespace["void?"].evalBody = function(syntaxStrTreeArg, namespace) {
         return new Racket.Bool(syntaxStrTreeArg[1].type === "Void");
     }
+    namespace["symbol?"] = new Racket.Lambda(["v"], new Racket.Exp(), namespace);
+    namespace["symbol?"].evalBody = function(syntaxStrTreeArg, namespace) {
+        return new Racket.Bool(syntaxStrTreeArg[1].type === "Sym");
+    }
+    namespace["string->symbol"] = new Racket.Lambda(["v"], new Racket.Exp(), namespace);
+    namespace["string->symbol"].evalBody = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length !=2 || syntaxStrTreeArg[1].type !="Str") {
+            outputlog("string->symbol requires 1 Str argument.");
+            return null;
+        }
+        return new Racket.Sym(syntaxStrTreeArg[1].value);
+    }
+    namespace["symbol->string"] = new Racket.Lambda(["v"], new Racket.Exp(), namespace);
+    namespace["symbol->string"].evalBody = function(syntaxStrTreeArg, namespace) {
+        if (syntaxStrTreeArg.length !=2 || syntaxStrTreeArg[1].type !="Sym") {
+            outputlog("symbol->string requires 1 Sym argument.");
+            return null;
+        }
+        return new Racket.Str(syntaxStrTreeArg[1].value);
+    }
     namespace["number?"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
     namespace["number?"].evalBody = function(syntaxStrTreeArg, namespace) {
         if (syntaxStrTreeArg.length !=2 || syntaxStrTreeArg[1].type !="Num") {
@@ -1403,7 +1533,7 @@ function populateStandardFunctions(namespace) {
         // I'll do this for now until I can figure out something better
         equal = equal && (syntaxStrTreeArg[1] === syntaxStrTreeArg[2] // Structure are not equal? unless they are the same object, and they don't have value
                             || ((syntaxStrTreeArg[1].type === syntaxStrTreeArg[2].type)
-                                && ((syntaxStrTreeArg[1] instanceof Racket.List) && (syntaxStrTreeArg[1].toString() === syntaxStrTreeArg[2].toString()))
+                                && ((syntaxStrTreeArg[1].isRacketList) && (syntaxStrTreeArg[1].toString() === syntaxStrTreeArg[2].toString()))
                                     || (!(syntaxStrTreeArg[1].value == null)
                                         && !(syntaxStrTreeArg[2].value == null)
                                         && (syntaxStrTreeArg[1].value === syntaxStrTreeArg[2].value))));
@@ -1828,7 +1958,7 @@ function populateStandardFunctions(namespace) {
     }
     namespace["print"] = new Racket.Lambda(["obj"], new Racket.Exp(), namespace);
     namespace["print"].evalBody = function(syntaxStrTreeArg, namespace) {
-        if (syntaxStrTreeArg.length !== 2 || !syntaxStrTreeArg[1].type instanceof Racket.Type) {
+        if (syntaxStrTreeArg.length !== 2 || !syntaxStrTreeArg[1].isRacketType) {
             outputlog("print requires 1 argument.");
             return null;
         }
@@ -2039,7 +2169,7 @@ function populateStandardFunctions(namespace) {
     }
     namespace["pair?"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
     namespace["pair?"].evalBody = function(syntaxStrTreeArg, namespace) {
-      if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Racket.List) {
+      if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1].isRacketList) {
         return new Racket.Bool(syntaxStrTreeArg[1].type === "Cell");
       } else {
         outputlog("pair? was not called with 1 list.");
@@ -2048,7 +2178,7 @@ function populateStandardFunctions(namespace) {
     }
     namespace["list?"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
     namespace["list?"].evalBody = function(syntaxStrTreeArg, namespace) {
-        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Racket.Type) {
+        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1].isRacketType) {
             if (syntaxStrTreeArg[1].type === "Empty")
                 return new Racket.Bool(true);
             else if (!(syntaxStrTreeArg[1] instanceof Racket.Cell))
@@ -2073,7 +2203,7 @@ function populateStandardFunctions(namespace) {
     }
     namespace["length"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
     namespace["length"].evalBody = function(syntaxStrTreeArg, namespace) {
-        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Racket.List) {
+        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1].isRacketList) {
             var len = syntaxStrTreeArg[1].length();
             if (len !== null)
                 return new Racket.Num(len);
@@ -2098,7 +2228,7 @@ function populateStandardFunctions(namespace) {
         if (syntaxStrTreeArg.length === 3 && new Racket.SExp(["list?", syntaxStrTreeArg[2]],namespace,identity).evalFinal().value === true) {
             var arr;
             var len;
-            if (syntaxStrTreeArg[2] instanceof Racket.List) {
+            if (syntaxStrTreeArg[2].isRacketList) {
                 len = syntaxStrTreeArg[2].length();
                 if (len !== null)
                     arr = new Array(len + 1); // gets length of cons list using function length;
@@ -2204,7 +2334,7 @@ function populateStandardFunctions(namespace) {
     }
     namespace["vector-set!"] = new Racket.Lambda(["vec","idx","val"], new Racket.Exp(), namespace);
     namespace["vector-set!"].evalBody = function(syntaxStrTreeArg, namespace) {
-        if (syntaxStrTreeArg.length === 4 && syntaxStrTreeArg[1].type === "Vector" && syntaxStrTreeArg[2].type === "Num" && syntaxStrTreeArg[3] instanceof Racket.Type){
+        if (syntaxStrTreeArg.length === 4 && syntaxStrTreeArg[1].type === "Vector" && syntaxStrTreeArg[2].type === "Num" && syntaxStrTreeArg[3].isRacketType){
             var vec = syntaxStrTreeArg[1];
             var idx = syntaxStrTreeArg[2].value;
             if (0<=idx && idx < vec.length) {
@@ -2219,7 +2349,7 @@ function populateStandardFunctions(namespace) {
     namespace["list->vector"] = new Racket.Lambda(["lst"], new Racket.Exp(), namespace);
     namespace["list->vector"].returnSExp = true;
     namespace["list->vector"].evalBody = function(syntaxStrTreeArg, namespace, continuation) {
-        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1] instanceof Racket.List){
+        if (syntaxStrTreeArg.length === 2 && syntaxStrTreeArg[1].isRacketList){
             var arr = ["vector"];
             var cell = syntaxStrTreeArg[1];
             while(cell.type === "Cell"){
@@ -2342,6 +2472,7 @@ function prep() {
     deletemenu = document.getElementById("delete-module-menu");
     deletebutton = document.getElementById("delete-button");
     filename = document.getElementById("file-name");
+    listAbbrev = document.getElementById("list-abbrev-checkbox");
     reindentbutton.onclick = function() {
         textfield.value = textfield.value.trim();
         for (var i=0; i< textfield.value.length; ++i) {
@@ -2660,6 +2791,16 @@ function tokenize(input) {
                 console.log("Mismatching quotes when tokenizing.");
                 return null;
             }
+        } else if (input.charAt(i) === "\|"){
+            special=searchForward(input,i+1,"\|");
+            if (special !==-1){
+                result.push(input.substring(i,special+1));
+                i=special;
+                continue;
+            } else {
+                console.log("Mismatching | when tokenizing.");
+                return null;
+            }
         } else if (input.substring(i,i+2) === "\#\|") {
             special = searchForwardNestedComments(input,i+1);
             if (special !==-1){
@@ -2726,9 +2867,14 @@ function evaluate(str) {
             outputlog("Error occurred parsing or tokenizing code.");
             return null;
         }
+
+        syntaxStrTreeBlocks = convertQuote(syntaxStrTreeBlocks);
+
         if (syntaxStrTreeBlocks[0] === "#lang") {
             syntaxStrTreeBlocks = syntaxStrTreeBlocks.slice(2);
         }
+        console.log("Parsed String Tree:" );
+        console.log(syntaxStrTreeBlocks);
 
         if (checkbox.checked && readyForUser)
             outputfield.value = "";
@@ -2805,9 +2951,6 @@ function parseStr(strArr) {
     }
 
     var parsedStrCodeTree = produceCodeBlocks(strArr);
-    console.log("Parsed String Tree:" );
-    console.log(parsedStrCodeTree);
-
     return parsedStrCodeTree;
 };
 
@@ -2866,6 +3009,57 @@ function produceCodeBlocks(tokens){
     }
     return block;
 }
+
+function convertQuote(syntaxStrBlocks){
+    var isQuote = false;
+    for (var i=0; i< syntaxStrBlocks.length; ++i) {
+        if (syntaxStrBlocks[i] === "\'") {
+            var j=i; 
+            while(syntaxStrBlocks[j] ==="\'") {
+                ++j;
+            }
+            if (j<syntaxStrBlocks.length) {
+                // Rules for quote special form
+                // if (quote 5) -> 5
+                // if (quote "d") -> "d"
+                // if (quote #\d) -> #\d
+                // if (quote asdf) -> 'asdf (Symbol type)
+                // if (quote (a b c d) ...) where a b c d can be atoms or (),
+                //    -> (list (quote a) (quote b) (quote c) (quote d) ...)
+                //   i.e.: '(1 2) -> 
+                //         (list (quote 1) (quote 2)) -> 
+                //         (list 1 2)
+                //   ie.: ''a -> 
+                //        (quote (quote a)) -> 
+                //        (list (quote quote) (quote a)) -> 
+                //        (list 'quote 'a)
+                //   i.e.: '('a 2) -> 
+                //         (quote ((quote a) 2)) -> 
+                //         (list (quote (quote a)) (quote 2)) -> 
+                //         (list (list (quote quote) (quote a)) 2)
+                //         (list (list 'quote 'a) 2)
+
+                // Rule for expanding ''a, '('a), '''''a etc into (quote ... blah)
+                // replace a 'next_obj with (quote next_obj)
+                // if next_obj is a ' also, follow through so that i.e. ''a is (quote (quote a))
+                // if next_obj is a (stuff_inside_i ... ) for 1<=i<=n n entries, 
+                //                                        let stuff_inside_modified_i = convertQuote(stuff_inside_i)
+                //    then replace with (list stuff_inside_modified_i ...)
+                
+                var replace = ["quote"].concat(syntaxStrBlocks.slice(i+1,j+1));
+                replace = convertQuote(replace);
+                syntaxStrBlocks = syntaxStrBlocks.slice(0,i).concat([replace]).concat(syntaxStrBlocks.slice(j+1));
+            } else {
+                console.log("Quote is not followed by anything.");
+                return syntaxStrBlocks;
+            }
+        } else if (syntaxStrBlocks[i].constructor === Array){
+            syntaxStrBlocks[i] = convertQuote(syntaxStrBlocks[i]);
+        }
+    }
+    return syntaxStrBlocks;
+}
+
 function parseStepExpBlocks (syntaxStrBlocks, namespace) {
     if (syntaxStrBlocks.length > 0) {
         while (syntaxStrBlocks.constructor === Array && syntaxStrBlocks[0][0] === "begin") {
@@ -2882,7 +3076,7 @@ function parseStepExpBlocks (syntaxStrBlocks, namespace) {
 
         if (exp) { // Expression is simplest form
             if (exp !== true && exp.type !== "Void") {
-                outputlog(""+exp); //Print output to console
+                outputlog(exp.toString());
             }
             return syntaxStrBlocks.slice(1); //return rest of blocks to parse
         } else {
@@ -2896,25 +3090,27 @@ function parseStepExpBlocks (syntaxStrBlocks, namespace) {
 function parseLookupType(expression,namespace) {
     //console.log("Tried parsing: "+ expression);
     //console.log(namespace);
-    if (expression instanceof Racket.Type || expression === null)
-        //replaced (expression instanceof Racket.Type || expression instanceof Racket.SExp) for now
+    if (expression && expression.isRacketType)
+        //replaced (expression.isRacketType || expression instanceof Racket.SExp) for now
         return expression;
-    else if (!isNaN(Number(expression)))
+    var len = expression.length;
+    if (!isNaN(Number(expression)))
         return new Racket.Num(Number(expression));
-    else if (expression[0]==="\"" && expression[expression.length-1]==="\"")
-        return new Racket.Str(expression.substring(1,expression.length-1));
-    else if (expression[0]==="\'" && expression.length>1)
-        return new Racket.Sym(expression.substring(1));
-    else if (expression.substring(0,2)==="\#\\" && expression.length>2)
-        return new Racket.Char(expression.substring(2));
-    else if (expression[0]==="\#" && expression.length==2)
-        return new Racket.Bool(expression==="\#t");
-    else if (specialForms[expression]) {
-        //console.log("Looked up special form: "+  expression);
-        return specialForms[expression];
-    } else if (namespace[expression]) {
-        //console.log("Looked up: "+ expression +" in namespace: " + namespace);
-        return namespace[expression];
+    else if (expression.charAt(0)==="\"" && expression.charAt(len-1)==="\"")
+        return new Racket.Str(expression.substring(1,len-1));
+    else if (expression.charAt(0)==="\#") {
+        if (expression.charAt(1) === "\\" && len>2) {
+            return new Racket.Char(expression.substring(2));
+        } else if (len===2) {
+            return new Racket.Bool(expression ==="\#t");
+        } else {
+            outputlog("Unknown type: "+expression);
+            return null;
+        }
+    }
+    var lookup = specialForms[expression] || namespace[expression];
+    if (lookup) {
+        return lookup;
     } else if (namespace["#moduleNamespaces"]["#moduleProvide"] && namespace["#moduleNamespaces"]["#moduleProvide"].hasOwnProperty(expression)) {
         var moduleName = namespace["#moduleNamespaces"]["#moduleProvide"][expression].sourceModule;
         return parseLookupType(expression,namespace["#moduleNamespaces"][moduleName]);
