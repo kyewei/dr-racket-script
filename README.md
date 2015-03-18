@@ -6,7 +6,7 @@ Racket is a language based in the Lisp/Scheme family of languages.
 I wrote this to augment my understanding of the language, which was taught in my university's CS135 course, 
 and also to see how far I could take an ambitious project like this.
 
-In its current state, it supports common atomic types (Number, String, Character, Boolean) with the exception of Symbols and as a result, literal notation. Numbers for now are also directly stored as JavaScript's floating point numbers, and not Racket's unlimited length numbers. It also supports named and anonymous functions (including lambda expressions along with its associated closure), Lists (singly-linked lists) and higher-order functions on Lists (map, foldr, foldl, filter, etc), creating user-defined structures, the Vector type (equivalent to array), basic module support (importing uploaded files through require and provide), and explicit continuations through call/cc.
+In its current state, it supports common atomic types (Number, String, Character, Boolean, Symbols), although literal notation doesn't support pairs for now (just use `(cons 1 2)` for now...). Numbers for now are also directly stored as JavaScript's floating point numbers, and not Racket's unlimited length numbers. It also supports named and anonymous functions (including lambda expressions along with its associated closure), Lists (singly-linked lists) and higher-order functions on Lists (map, foldr, foldl, filter, etc), creating user-defined structures, the Vector type (equivalent to array), basic module support (importing uploaded files through require and provide), and explicit continuations through call/cc.
 
 You may find that there are many functions specific to lists. 
 This is because I implemented many list functions and higher order list processing functions since I found Racket's list processing functionality very different from those in other traditional imperative programming languages. 
@@ -45,7 +45,7 @@ a ;; -> 2
 
 (define (mystery arg1 . rest-arg)
   (cons (add1 arg1) rest-arg))
-(mystery 100 1 2 3 4 5) ;; -> (list 101 1 2 3 4 5)
+(mystery 100 1 2 3 4 5) ;; -> '(101 1 2 3 4 5)
 
 (local [(define x 5)]
   (local [(define x 6)] x)) ;; -> 6
@@ -59,18 +59,19 @@ a ;; -> 2
 (define n 
   (begin (print "Assigning 5 to n")
          5)) ;; -> "Assigning 5 to n"
-a ;; -> 5
+n ;; -> 5
 
 (define  (fn n)
   (printf "~a was passed" n)
   (void))
 (fn 0) ;; -> 0 was passed
 ```
-* Lists
+* Lists and List Abbreviations
 ```
 (append (cons 1 (cons 2 empty))
         (list 3 4 5)
-        (list 6)) ;; -> (list 1 2 3 4 5 6)
+        (list 6)
+        '(7 8 9)) ;; -> '(1 2 3 4 5 6 7 8 9)
 ```
 * Higher-order functions: `foldr`,`foldl`,`map`,`filter`,`build-list`,`andmap`,`ormap`,`apply`
 ```
@@ -195,6 +196,7 @@ These are the currently implemented special forms:
     (provide id ...)
     (when predicate? ... true-final-exp))
     (unless predicate? ... false-final-exp))
+    (quote ...)
 
 ###Implemented List and Higher Order Functions
 Higher order functions were implemented with variadic arguments if they supported them.
