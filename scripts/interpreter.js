@@ -29,7 +29,7 @@ function Namespace(inheritedNamespace, isTopLevel) {
     // Rather, I want the prototypical nature of namespaces to provide lookup to parent namespace's ["#moduleNamespaces"]
 
     // make the container #moduleProvide inside #moduleNamespaces
-    newNamespace["#thisModuleProvide"] = {}; //list of module provided id's
+    //newNamespace["#thisModuleProvide"] = {}; //list of module provided id's
     return newNamespace;
 };
 
@@ -39,6 +39,7 @@ Racket.Namespace = {};
 
 
 var libraryNamespace = Namespace(Racket.Namespace);
+libraryNamespace["#thisModuleProvide"] = {};
 libraryNamespace["#moduleNamespaces"] = {};
 libraryNamespace["#moduleNamespaces"]["#moduleProvide"] = {};
 var globalNamespace = Namespace(libraryNamespace,true);
@@ -332,6 +333,10 @@ Racket.Lambda.prototype = new Racket.Function();
 Racket.Lambda.prototype.eval = function (syntaxStrTreeArg, namespace, continuation) {
     var result = this.evalBody(syntaxStrTreeArg,namespace,continuation); // usually the third parameter is not used
     return result;
+};
+Racket.Lambda.libraryEval = function (syntaxStrTreeArg, namespace, continuation) { // other uses
+    var result = this.evalBody(syntaxStrTreeArg,namespace,continuation);
+    return continuation.eval([continuation, result], namespace, continuation);
 };
 Racket.Lambda.prototype.evalBody = function (syntaxStrTreeArg, namespace, continuation) {
     var lambdaNamespace = Namespace(this.inheritedNamespace);
@@ -870,6 +875,7 @@ function populateSpecialForms() {
             return null;
         }*/
         namespace[typename+"?"] = new Racket.Lambda(["x"], new Racket.Exp(), namespace);
+        namespace[typename+"?"].eval = Racket.Lambda.libraryEval;
         namespace[typename+"?"].evalBody = function(syntaxStrTreeArg, namespace) {
             if (syntaxStrTreeArg.length !=2) {
                 outputlog(typename+"?"+" requires exactly 1 argument.");
@@ -884,6 +890,7 @@ function populateSpecialForms() {
             return null;
         }*/
         namespace["make-"+typename] = new Racket.Lambda([".","rst"], new Racket.Exp(), namespace); //has propertyCount many arguments
+        namespace["make-"+typename].eval = Racket.Lambda.libraryEval;
         namespace["make-"+typename].evalBody = function(syntaxStrTreeArg, namespace) {
             if (syntaxStrTreeArg.length != propertyCount+1) {
                 outputlog("make-"+typename+" requires "+propertyCount+" argument(s).");
@@ -897,6 +904,7 @@ function populateSpecialForms() {
             return null;
         }*/
         namespace[typename] = new Racket.Lambda([".","rst"], new Racket.Exp(), namespace); //has propertyCount many arguments
+        namespace[typename].eval = Racket.Lambda.libraryEval;
         namespace[typename].evalBody = function(syntaxStrTreeArg, namespace) {
             if (syntaxStrTreeArg.length != propertyCount+1) {
                 outputlog(typename+" requires "+propertyCount+" argument(s).");
@@ -915,6 +923,7 @@ function populateSpecialForms() {
                 return null;
             }*/
             namespace[typename+"-"+id] = new Racket.Lambda(["obj"], new Racket.Exp(), namespace);
+            namespace[typename+"-"+id].eval = Racket.Lambda.libraryEval;
             namespace[typename+"-"+id].id = propertyNames[i]; // needed to do this because this makes a deep copy
             namespace[typename+"-"+id].evalBody = function(syntaxStrTreeArg, namespace) {
                 if (syntaxStrTreeArg.length !=2 || syntaxStrTreeArg[1].type !==syntaxStrTree[1]) {
@@ -1371,6 +1380,10 @@ function populateSpecialForms() {
             //  give namespace under #moduleNamespaces
             var moduleNamespace = Namespace(libraryNamespace, true);
 
+            if (!moduleNamespace["#thisModuleProvide"]) {
+                moduleNamespace["#thisModuleProvide"] = {};
+            }
+
             // Make these containers every time new globalNamespace is made.
             // This is a module globalNamespace
             moduleNamespace["#moduleNamespaces"] = {};
@@ -1380,6 +1393,7 @@ function populateSpecialForms() {
             while (stepExp.length > 0) {
                 stepExp = parseStepExpBlocks(stepExp, moduleNamespace);
             }
+
 
             //check provide to make sure all provided id's are actually defined
             var provideAll = true;
@@ -1429,6 +1443,9 @@ function populateSpecialForms() {
         //assert syntaxStrTree[0] === "provide"
         // in the form of :
         // (provide id ...)
+        if (!namespace["#thisModuleProvide"]) {
+            namespace["#thisModuleProvide"] = {};
+        }
 
         for (var i=1; i< syntaxStrTree.length; ++i){
             if (typeof syntaxStrTree[i] == 'string' || syntaxStrTree[i] instanceof String){ //is id then
@@ -2430,16 +2447,12 @@ function populateStandardFunctions(namespace) {
         var result = this.evalBody(syntaxStrTreeArg,namespace,continuation); // usually the third parameter is not used
         return continuation.eval([continuation, result], namespace, continuation);
     };*/
-    var libraryEval = function (syntaxStrTreeArg, namespace, continuation) {
-        var result = this.evalBody(syntaxStrTreeArg,namespace,continuation);
-        return continuation.eval([continuation, result], namespace, continuation);
-    };
     for (var i=0; i< keys.length; ++i) {
         var lambda = namespace[keys[i]];
         if (lambda && lambda.type === "Lambda") {
             
             if (!lambda.returnSExp) {
-                lambda.eval = libraryEval;
+                lambda.eval = Racket.Lambda.libraryEval;
             }
         }
     }
@@ -3094,7 +3107,7 @@ function parseLookupType(expression,namespace) {
         //replaced (expression.isRacketType || expression instanceof Racket.SExp) for now
         return expression;
     var len = expression.length;
-    if (!isNaN(Number(expression)))
+    if (!isNaN(expression))
         return new Racket.Num(Number(expression));
     else if (expression.charAt(0)==="\"" && expression.charAt(len-1)==="\"")
         return new Racket.Str(expression.substring(1,len-1));
