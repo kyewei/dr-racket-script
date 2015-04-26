@@ -6,6 +6,8 @@ Racket is a language based in the Lisp/Scheme family of languages.
 I wrote this to augment my understanding of the language, which was taught in my university's CS135 course, 
 and also to see how far I could take an ambitious project like this.
 
+Try it out [here](http://kyewei.github.io/dr-racket-script/).
+
 In its current state, it supports common atomic types (Number, String, Character, Boolean, Symbols), although literal notation doesn't support pairs for now (just use `(cons 1 2)` for now...). Numbers for now are also directly stored as JavaScript's floating point numbers, and not Racket's unlimited length numbers. It also supports named and anonymous functions (including lambda expressions along with its associated closure), Lists (singly-linked lists) and higher-order functions on Lists (map, foldr, foldl, filter, etc), creating user-defined structures, the Vector type (equivalent to array), basic module support (importing uploaded files through require and provide), and explicit continuations through call/cc.
 
 You may find that there are many functions specific to lists. 
@@ -13,7 +15,6 @@ This is because I implemented many list functions and higher order list processi
 
 The way code is evaluated is a form of continuation passing style (CPS) but modified to work in JavaScript, where an explicit continuation (a sort of program state that encapsulates what a program does after a particular step in evaluation) is passed from call to call. This allows not only tail-recursive but also non-tail-recursive calls to recurse infinitely if needed, and can support deep recursion (as long as it eventually finishes of course).
 
-Try it out [here](http://kyewei.github.io/dr-racket-script/).
 
 ###Implementation Details (for those who are curious)
 
@@ -153,22 +154,48 @@ n ;; -> 5
 (continuation 102) ;; -> 107
 ;; continuation is equivalent to (lambda (n) (+ 2 (+ 3 n)))
 
-;; To illustrate the power of call/cc, consider implementing a traditional 'break' using call/cc
-(define (check-prime x) ;; naive prime checker by iterating from 2 .. i .. n-1, when break when i divides n
-  (define add2 (lambda (l) (+ 2 l))) ;; reused multiple times
-  (cond [(< x 0) #f]
-        [(= x 2) #t]
-        [else (call/cc (lambda (break)
-                         (for-each (lambda (n)
-                                     (if (zero? (remainder x n))
-                                         (break #f)
-                                         (void)))
-                                   (build-list (- x 3)
-                                               add2))
-                         #t))]))
-(check-prime 2) ;; -> #t
-(check-prime 6) ;; -> #f
-(check-prime 7) ;; -> #t
+
+;; Creating a traditional 'break' statement using call/cc:
+(define (provide-break body-thunk)
+  (call/cc 
+   (lambda (k)
+     (define break (lambda () (k (void))))
+     (body-thunk break))))
+
+(provide-break 
+ (lambda (break)
+   (print "This is reached.")
+   (+ 1 (* 2 (break)))
+   (print "This is not reached.")))
+
+
+;; Simulating a try-catch-finally block with call/cc:
+(define (try body-thunk catch finally)
+  (define result 
+    (call/cc (lambda (k)
+               (define throw 
+                 (lambda (r) 
+                   (k (catch r))))
+               (body-thunk throw))))
+  (finally result))
+
+(define (divide x y)
+  (try (lambda (throw) ;; main code
+         (if (zero? y)
+             (throw "Divide by 0")
+             (/ x y)))
+       (lambda (r) ;; handler
+         (print (string-append "Error: " r))
+         (void))
+       (lambda (result) ;; finally
+         (if (number? result)
+             (string-append "Result: " 
+                            (number->string result))
+             (void)))))
+
+(divide 2 1) ;; -> "Result: 2"
+(divide 2 0) ;; -> "Error: Divide by 0"
+
 ```
 
 ###Special Forms
@@ -189,6 +216,7 @@ These are the currently implemented special forms:
     (let ([id exp] ...) ... bodyexp)
     (let* ([id exp] ...) ... bodyexp)
     (letrec ([id exp] ...) ... bodyexp)
+    (let/cc id ... bodyexp)
     (begin exp ... final-return-exp)
     (begin0 first-return-exp ... exp)
     (set! id exp)
