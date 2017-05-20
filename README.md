@@ -16,7 +16,7 @@ This is because I implemented many list functions and higher order list processi
 The way code is evaluated is a form of continuation passing style (CPS) but modified to work in JavaScript, where an explicit continuation (a sort of program state that encapsulates what a program does after a particular step in evaluation) is passed from call to call. This allows not only tail-recursive but also non-tail-recursive calls to recurse infinitely if needed, and can support deep recursion (as long as it eventually finishes of course).
 
 
-###Implementation Details (for those who are curious)
+### Implementation Details (for those who are curious)
 
 To implement proper namespacing and nesting, I leveraged the JavaScript language's support of prototypical inheritance and its support of accessing objects as associative arrays. Nested deeper 'namespaces' inherit through its prototype chain (which consists of surrounding namespaces) to gain access to its environment variables. This allows deeer namespaces to act like augmented namespaces.
 
@@ -34,7 +34,7 @@ While it is being converted into arrays, it is also being evaluated depth-first,
 Evaluation is done through every object having an eval() that accepts arguments, which either returns itself, or in the case of a function or special form, returns the evaluated function result.
 
 
-###Supported Language Features
+### Supported Language Features
 * Defining values and functions, lexical scoping (for `local`, `define`, functions, etc) with support for rest arguments 
 ```
 (define a 2)
@@ -198,7 +198,7 @@ n ;; -> 5
 
 ```
 
-###Special Forms
+### Special Forms
 These are the currently implemented special forms:
 
     (define id bodyexp)
@@ -226,7 +226,7 @@ These are the currently implemented special forms:
     (unless predicate? ... false-final-exp))
     (quote ...)
 
-###Implemented List and Higher Order Functions
+### Implemented List and Higher Order Functions
 Higher order functions were implemented with variadic arguments if they supported them.
 However, although unary versions were implemented efficiently,
 their variadic counterparts required using (apply) and turned out not as efficient.
@@ -259,9 +259,9 @@ their variadic counterparts required using (apply) and turned out not as efficie
 
 Other non-list functions were also implemented, but are not discussed here.
 
-###To be Implemented in the Future
+### To be Implemented in the Future
 I will be adding features as I learn more of the language. These include:
 * More special forms and functions as I see fit that are unique to Lisp/Scheme languages
 
-####Remark:
+#### Remark:
 "It's surprising how much work a person can get done during finals week..." (Me, 2014)
